@@ -504,6 +504,11 @@ def test_platform_object_extraction():
     ev4.platform_id = meta
     ev4.platform = ""
     assert p._canonical_key(ev4) == "group:aiocqhttp:753700701"
+    # partial 这类非字符串非命名对象直接丢弃，不进 key
+    import functools
+    assert pf(SimpleNamespace(
+        platform_id=functools.partial(lambda *a: None, "platform_name"),
+        platform="", unified_msg_origin="")) == ""
 
 
 def test_insane_keys_dropped_on_load():
@@ -520,6 +525,26 @@ def test_insane_keys_dropped_on_load():
             "mode": "reference", "force_system_prompt": False},
     })
     assert set(p._bindings.keys()) == {"group:onebot:123"}, p._bindings.keys()
+
+
+def test_platform_field_scrub():
+    p, tmp = _make_plugin()
+    (tmp / "plugdata").mkdir(parents=True, exist_ok=True)
+    (tmp / "plugdata" / "seen_groups.json").write_text(json.dumps({
+        "753700701": {"gid": "753700701", "group_name": "小白",
+                      "platform": "functools.partial(<x>, 'platform_name')",
+                      "kind": "group", "first_seen": 1, "last_seen": 2, "msg_count": 5},
+    }), encoding="utf-8")
+    (tmp / "plugdata" / "bindings.json").write_text(json.dumps({
+        "group:onebot:1": {"doc_ids": [], "prompt": "hi", "shield": False, "mode": "reference",
+                           "force_system_prompt": False, "platform": "garbage!!"},
+    }), encoding="utf-8")
+    p._init_store()
+    # 脏 platform 只清字段/拔除，条目本身保留（群还在，可重新识别）
+    assert p._seen_groups["753700701"]["platform"] == ""
+    assert p._seen_groups["753700701"]["msg_count"] == 5
+    assert "platform" not in p._bindings["group:onebot:1"]
+    assert p._bindings["group:onebot:1"]["prompt"] == "hi"
 
 
 if __name__ == "__main__":
@@ -542,4 +567,5 @@ if __name__ == "__main__":
     test_export_import_roundtrip()
     test_platform_object_extraction()
     test_insane_keys_dropped_on_load()
+    test_platform_field_scrub()
     print("test_plugin PASSED")

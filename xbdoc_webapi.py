@@ -408,7 +408,9 @@ class XbdocWebAPIMixin:
         import asyncio
         found_groups: Dict[str, Dict[str, Any]] = {}
         bots = self._find_all_bots()
-        diag: List[str] = [f"adapters={len(bots)}"]
+        diag: List[str] = [f"adapters={len(bots)}"] + [
+            f"bot[{i}]={type(b).__name__}" for i, b in enumerate(bots[:5])
+        ]
 
         actions = ["get_group_list", "getGroupList", "get_groups", "list_groups", "get_joined_groups"]
 
@@ -459,6 +461,13 @@ class XbdocWebAPIMixin:
             cand, results = item
             if not isinstance(results, list):
                 continue
+            # 平台名同样走清洗：适配器对象上的 platform_name 可能是 partial 之类非字符串，
+            # 直接 str() 会产生垃圾并污染 seen（历史教训），非法则回落 onebot
+            try:
+                p_name = self._clean_platform(
+                    getattr(cand, "platform_name", "") or getattr(cand, "name", "")) or "onebot"
+            except Exception:
+                p_name = "onebot"
             for info in results:
                 if not isinstance(info, (dict, list)):
                     continue
@@ -475,7 +484,6 @@ class XbdocWebAPIMixin:
                             m_count = int(g.get("member_count") or g.get("members_count") or 0)
                         except Exception:
                             m_count = 0
-                        p_name = str(getattr(cand, "platform_name", "") or getattr(cand, "name", "") or "onebot")
                         # 平台+群号双键：跨平台同号群各自保留，不再互相覆盖
                         fkey = f"{p_name}:{gid}"
                         if fkey in found_groups:

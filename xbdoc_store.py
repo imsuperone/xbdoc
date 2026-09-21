@@ -102,12 +102,21 @@ class XbdocStoreMixin:
         # 加载并自动标准化数据（有变才回写，避免每次启动空转 I/O）
         self._index: Dict[str, Dict[str, Any]] = self._load_json(self.index_path, {})
         _raw_seen = self._load_json(self.seen_path, {})
-        self._seen_groups: Dict[str, Dict[str, Any]] = {
-            k: v for k, v in (_raw_seen or {}).items() if self._is_sane_key(str(k))
-        }
-        if isinstance(_raw_seen, dict) and len(self._seen_groups) != len(_raw_seen):
-            dropped = len(_raw_seen) - len(self._seen_groups)
-            logger.warning(f"[{PLUGIN_NAME}] 启动清理污染群记录 {dropped} 条")
+        # 污染自清：坏 key 整条扔；platform 脏字段清空（卡片不再展示 repr 残骸）
+        self._seen_groups = {}
+        _scrubbed = 0
+        if isinstance(_raw_seen, dict):
+            for _k, _v in _raw_seen.items():
+                if not self._is_sane_key(str(_k)):
+                    _scrubbed += 1
+                    continue
+                if isinstance(_v, dict):
+                    if _v.get("platform") and not self._clean_platform(_v.get("platform")):
+                        _v["platform"] = ""
+                        _scrubbed += 1
+                    self._seen_groups[_k] = _v
+        if _scrubbed:
+            logger.warning(f"[{PLUGIN_NAME}] 启动清理污染群记录 {_scrubbed} 条")
             self._save_seen()
         _raw_bindings = self._load_json(self.bindings_path, {})
         self._bindings: Dict[str, Dict[str, Any]] = self._normalize_bindings(_raw_bindings)
@@ -656,6 +665,10 @@ class XbdocStoreMixin:
                 **{kk: vv for kk, vv in v.items() if kk not in (
                     "doc_ids", "prompt", "shield", "mode", "force_system_prompt")},
             }
+            # platform 脏字段直接拔（合法的才留，展示用；key 自带限定不受影响）
+            _pf = self._clean_platform(new_ent.pop("platform", ""))
+            if _pf:
+                new_ent["platform"] = _pf
             if ck not in out:
                 out[ck] = new_ent
             else:
@@ -706,8 +719,10 @@ class XbdocStoreMixin:
         if _MODE_PRIORITY.get(str(old.get("mode") or "reference"), 0) > \
                 _MODE_PRIORITY.get(str(cur.get("mode") or "reference"), 0):
             cur["mode"] = old.get("mode")
-        if not cur.get("platform") and old.get("platform"):
-            cur["platform"] = old.get("platform")
+        if not cur.get("platform"):
+            _pf = XbdocStoreMixin._clean_platform(old.get("platform", ""))
+            if _pf:
+                cur["platform"] = _pf
         # 其余未知字段只补不盖（创建时缺省已齐，此处多为 ignore_history 等开关的或合并）
         for kk, vv in old.items():
             if kk not in ("doc_ids", "prompt", "shield", "force_system_prompt",
