@@ -102,7 +102,8 @@ class XbdocStoreMixin:
         # 加载并自动标准化数据（有变才回写，避免每次启动空转 I/O）
         self._index: Dict[str, Dict[str, Any]] = self._load_json(self.index_path, {})
         _raw_seen = self._load_json(self.seen_path, {})
-        # 污染自清：坏 key 整条扔；platform 脏字段清空（卡片不再展示 repr 残骸）
+        # 污染自清：坏 key 整条扔；platform 脏字段——有真限定 key 的只清字段，
+        # 无限定 key 配垃圾平台的整条扔（不可信，群下次露面自动重建）
         self._seen_groups = {}
         _scrubbed = 0
         if isinstance(_raw_seen, dict):
@@ -112,7 +113,12 @@ class XbdocStoreMixin:
                     continue
                 if isinstance(_v, dict):
                     if _v.get("platform") and not self._clean_platform(_v.get("platform")):
-                        _v["platform"] = ""
+                        _kk, _kplat, _iid = self._split_session_key(str(_k))
+                        if _kplat:
+                            _v["platform"] = ""
+                        else:
+                            _scrubbed += 1
+                            continue
                         _scrubbed += 1
                     self._seen_groups[_k] = _v
         if _scrubbed:

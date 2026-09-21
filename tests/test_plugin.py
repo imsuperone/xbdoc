@@ -534,15 +534,18 @@ def test_platform_field_scrub():
         "753700701": {"gid": "753700701", "group_name": "小白",
                       "platform": "functools.partial(<x>, 'platform_name')",
                       "kind": "group", "first_seen": 1, "last_seen": 2, "msg_count": 5},
+        "group:onebot:2": {"gid": "2", "group_name": "G2", "platform": "garbage!!",
+                           "kind": "group", "first_seen": 1, "last_seen": 2, "msg_count": 0},
     }), encoding="utf-8")
     (tmp / "plugdata" / "bindings.json").write_text(json.dumps({
         "group:onebot:1": {"doc_ids": [], "prompt": "hi", "shield": False, "mode": "reference",
                            "force_system_prompt": False, "platform": "garbage!!"},
     }), encoding="utf-8")
     p._init_store()
-    # 脏 platform 只清字段/拔除，条目本身保留（群还在，可重新识别）
-    assert p._seen_groups["753700701"]["platform"] == ""
-    assert p._seen_groups["753700701"]["msg_count"] == 5
+    # 无限定 key 配垃圾平台：整条扔（不可信）；有限定 key 的只清字段，条目保留
+    assert "753700701" not in p._seen_groups
+    assert p._seen_groups["group:onebot:2"]["platform"] == ""
+    assert p._seen_groups["group:onebot:2"]["group_name"] == "G2"
     assert "platform" not in p._bindings["group:onebot:1"]
     assert p._bindings["group:onebot:1"]["prompt"] == "hi"
 
