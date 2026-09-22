@@ -6,6 +6,25 @@
 from typing import List, Tuple
 
 
+def fold_ws(text: str) -> str:
+    """无损压缩空白：去行尾空白、折叠连续空行（省 token，不改语义）。"""
+    if not text:
+        return text
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [ln.rstrip() for ln in text.split("\n")]
+    out: List[str] = []
+    blank = 0
+    for ln in lines:
+        if ln == "":
+            blank += 1
+            if blank > 1:
+                continue
+        else:
+            blank = 0
+        out.append(ln)
+    return "\n".join(out)
+
+
 def apply_system_prompt(req, text: str, replace: bool) -> None:
     """改写 LLM 请求的系统提示词。
 
@@ -46,20 +65,23 @@ def apply_system_prompt(req, text: str, replace: bool) -> None:
 
 
 def truncate_text(body: str, max_chars: int, min_remain: int = 200) -> str:
-    """截断公共逻辑：max_chars <= 0 表示不限制、完整注入；够长才截并打标记；专属提示词永不经此截断。"""
+    """截断公共逻辑：max_chars <= 0 不限制；总长（含标记）严格 ≤ max_chars；专属提示词永不经此截断。"""
     body = body or ""
     if max_chars <= 0:
         return body
     if len(body) <= max_chars:
         return body
-    if max_chars <= min_remain:
+    mark = "\n…(截断)"
+    if max_chars <= len(mark):
         return body[:max_chars]
-    return body[:max_chars] + "\n…(截断)"
+    return body[: max_chars - len(mark)] + mark
 
 
 def build_system_text(doc_texts: List[str], custom_prompt: str, max_chars: int) -> str:
-    """强制遵守模式：文档全文拼接（截断只截文档）+ 专属提示词（永不截断）。"""
-    combined = truncate_text("\n\n".join(t for t in doc_texts if t), max_chars)
+    """强制遵守模式：文档全文空白折叠 + 拼接截断 + 专属提示词（永不截断）。"""
+    combined = truncate_text(
+        fold_ws("\n\n".join(t for t in doc_texts if t)), max_chars
+    )
     custom_prompt = (custom_prompt or "").strip()
     if not combined:
         return custom_prompt
@@ -69,20 +91,23 @@ def build_system_text(doc_texts: List[str], custom_prompt: str, max_chars: int) 
 def build_workspace_text(
     files: List[Tuple[str, str]], custom_prompt: str, max_chars: int
 ) -> str:
-    """工作区模式：/workspace/<文件名> 挂载节 + 专属提示词（永不截断）。max_chars <= 0 时全量挂载。"""
+    """工作区模式：挂载头计入预算；正文空白折叠；max_chars <= 0 时全量挂载。"""
     sections: List[str] = []
     total = 0
     for fname, body in files:
-        body = body or ""
-        if max_chars <= 0 or total + len(body) <= max_chars:
-            sections.append(f"/workspace/{fname}:\n{body}")
-            total += len(body)
+        header = f"/workspace/{fname}:\n"
+        body = fold_ws(body or "")
+        # 头 + 正文一起占预算，避免轻量超 max_chars
+        if max_chars <= 0 or total + len(header) + len(body) <= max_chars:
+            sections.append(header + body)
+            total += len(header) + len(body)
         else:
-            remain = max(0, max_chars - total)
+            remain = max(0, max_chars - total - len(header))
             if remain > 200:
-                sections.append(f"/workspace/{fname}:\n{truncate_text(body, remain)}")
-                total += remain
-    content = "\n\n".join(sections)
+                cut = truncate_text(body, remain)
+                sections.append(header + cut)
+                total += len(header) + len(cut)
+    content = fold_ws("\n\n".join(sections))
     custom_prompt = (custom_prompt or "").strip()
     if custom_prompt:
         return f"{content}\n\n{custom_prompt}" if content else custom_prompt

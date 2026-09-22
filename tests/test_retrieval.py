@@ -101,8 +101,11 @@ def test_docx_tables():
 
 def test_truncate():
     assert truncate_text("abc", 10) == "abc"
-    assert truncate_text("a" * 100, 10) == "a" * 10  # 过小上限只截不断言标记
-    assert truncate_text("a" * 1000, 600).endswith("…(截断)")
+    # 过小上限：总长（含截断标记）严格 ≤ max_chars，不再超长
+    out_small = truncate_text("a" * 100, 10)
+    assert len(out_small) == 10 and out_small.endswith("…(截断)"), repr(out_small)
+    out = truncate_text("a" * 1000, 600)
+    assert out.endswith("…(截断)") and len(out) == 600, len(out)
     assert truncate_text("a" * 9000, 0) == "a" * 9000  # 0=不限制，完整注入
     assert truncate_text("a" * 9000, -5) == "a" * 9000
     # 专属提示词永不截断：build 段階只截文档部分
@@ -110,6 +113,9 @@ def test_truncate():
     assert "PROMPT" in out and out.endswith("PROMPT")
     ws = build_workspace_text([("f.md", "b" * 100)], "P", 1000)
     assert "/workspace/f.md" in ws and ws.endswith("P")
+    # workspace 挂载头计入预算：含头总长不超 max_chars
+    ws_tight = build_workspace_text([("f.md", "b" * 500)], "", 100)
+    assert len(ws_tight) <= 100, len(ws_tight)
 
 
 if __name__ == "__main__":

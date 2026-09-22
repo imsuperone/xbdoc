@@ -7,7 +7,6 @@ import time
 from typing import Any, Dict, List
 
 from astrbot.api import logger
-from astrbot.api.event import AstrMessageEvent
 
 try:
     from astrbot.api.web import (
@@ -48,6 +47,26 @@ class XbdocWebAPIMixin:
         reg(f"/{PLUGIN_NAME}/bindings/save", self._api_save_binding, ["POST"], "保存绑定")
         reg(f"/{PLUGIN_NAME}/bindings/export", self._api_export_bindings, ["GET"], "导出绑定备份")
         reg(f"/{PLUGIN_NAME}/bindings/import", self._api_import_bindings, ["POST"], "导入绑定备份")
+        reg(f"/{PLUGIN_NAME}/settings", self._api_get_settings, ["GET"], "读取插件设置")
+        reg(f"/{PLUGIN_NAME}/settings/save", self._api_save_settings, ["POST"], "保存插件设置")
+
+    async def _api_get_settings(self):
+        return json_response({
+            "config": self.get_plugin_config(),
+            "meta": self.get_config_meta(),
+        })
+
+    async def _api_save_settings(self):
+        payload = await request.json(default={})
+        incoming = payload.get("config", payload) if isinstance(payload, dict) else None
+        try:
+            saved = self.save_plugin_config(incoming)
+        except ValueError as e:
+            return error_response(str(e), status_code=400)
+        except Exception as e:
+            logger.error(f"[{PLUGIN_NAME}] 保存设置异常: {e}")
+            return error_response(f"保存失败: {e}", status_code=500)
+        return json_response({"ok": True, "config": saved, "meta": self.get_config_meta()})
 
 
     async def _api_list_docs(self):
@@ -112,9 +131,9 @@ class XbdocWebAPIMixin:
             return error_response("未读取到上传文件内容，请重试", status_code=400)
 
         try:
-            # 入库含解码/切片等 CPU 与磁盘 IO，扔到线程池避免阻塞事件循环
+            # 入库含解码/切片等 CPU 与磁盘 IO，扔到插件专用线程池（启动已预热）避免阻塞事件循环
             meta = await asyncio.get_running_loop().run_in_executor(
-                None, self.add_document, filename, data
+                self._executor, self.add_document, filename, data
             )
             return json_response({"ok": True, "doc": meta})
         except RuntimeError as e:
@@ -531,7 +550,7 @@ class XbdocWebAPIMixin:
             kind = str(meta.get("kind") or "").strip()
             if raw_key.startswith("private:") or kind == "private":
                 _k, _p, uid = self._split_session_key(raw_key)
-                uid = uid or raw_key.split(":", 1)[1] if ":" in raw_key else raw_key
+                uid = uid or (raw_key.split(":", 1)[1] if ":" in raw_key else raw_key)
                 name = str(meta.get("group_name") or "").strip()
                 merged[raw_key] = {
                     "gid": uid, "group_name": name,

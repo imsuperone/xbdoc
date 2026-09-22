@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -41,15 +42,60 @@ except ImportError:
 
 PLUGIN_NAME = "astrbot_plugin_xbdoc"
 
-# 配置唯一来源：与 _conf_schema.json 默认值保持一致，__init__ 不做快照
+# 配置唯一来源（无 _conf_schema.json）：默认值 + data_dir/plugin_config.json 覆盖 + 运行时 self.config
 CONFIG_DEFAULTS: Dict[str, Any] = {
     "chunk_size": 1500,
     "chunk_overlap": 200,
     "top_k": 3,
     "max_inject_chars": 6000,
     "auto_inject": True,
+    "fallback_inject": True,
     "allow_private_bind": True,
     "perf_log": False,
+}
+
+# 配置项元数据：供 WebUI 设置页渲染（description/hint 与原 _conf_schema.json 对齐）
+CONFIG_META: Dict[str, Dict[str, Any]] = {
+    "chunk_size": {
+        "description": "文档切片长度（字符数）",
+        "hint": "段落优先切分，超出此长度自动截断。建议 1500 兼顾效果与 token 消耗。",
+        "type": "int",
+    },
+    "chunk_overlap": {
+        "description": "切片重叠字符数",
+        "hint": "保留上下文连贯性，建议为 chunk_size 的 10%~20%。",
+        "type": "int",
+    },
+    "top_k": {
+        "description": "单次检索注入片段数量",
+        "hint": "建议 3~5 片段，避免挤占模型上下文。",
+        "type": "int",
+    },
+    "max_inject_chars": {
+        "description": "单次注入最大字符上限",
+        "hint": "0 表示不限制，保证完整注入；防止提示词过长超出大模型单次承载能力可设正数。",
+        "type": "int",
+    },
+    "auto_inject": {
+        "description": "自动检索与上下文注入",
+        "hint": "开启后在模型对话前自动检索相关片段注入。",
+        "type": "bool",
+    },
+    "fallback_inject": {
+        "description": "未命中时保底注入首片段",
+        "hint": "检索无关键词命中时，保底载入绑定文档首片段，确保模型拥有文档认知；关闭则无命中不注入。",
+        "type": "bool",
+    },
+    "allow_private_bind": {
+        "description": "允许私聊会话独立绑定",
+        "hint": "关闭后仅群聊生效。",
+        "type": "bool",
+    },
+    "perf_log": {
+        "description": "性能日志（排查回复慢）",
+        "hint": "开启后每条回复记录插件耗时、注入字数与上下文规模，定位慢的原因。",
+        "type": "bool",
+    },
 }
 
 # 模式强度（隔离级别）：脏 key 合并时高强度胜出，保证结果与遍历顺序无关
@@ -76,6 +122,12 @@ class XbdocStoreMixin:
         # 锁与缓存必须先就绪：后续 _save_json/_load_chunks 依赖它们
         # RLock：读改写关键区（bind/unbind/入库）可与内部的 _save_json 嵌套加锁，不死锁
         self._save_lock = threading.RLock()  # 落盘+绑定锁：防 WebUI 与聊天指令并发写撕裂
+        # 专用线程池：上传入库等重活不占默认 executor；提交空任务预热线程，首传免 spawn 延迟
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="xbdoc")
+        try:
+            self._executor.submit(lambda: None)
+        except Exception:
+            pass
         self._chunk_cache: Dict[str, List[str]] = {}  # 内存缓存：doc_id -> chunks
         self._chunk_tokens_cache: Dict[str, List[Counter]] = {}  # 性能优化：doc_id -> 每切片词频
         self._seen_save_ts = 0  # 群记录节流时间戳（仅内存，不落盘）
@@ -89,6 +141,7 @@ class XbdocStoreMixin:
         self.index_path = self.data_dir / "index.json"
         self.bindings_path = self.data_dir / "bindings.json"
         self.seen_path = self.data_dir / "seen_groups.json"
+        self.config_path = self.data_dir / "plugin_config.json"
         # 崩溃残留的 tmp 先清，避免越积越多（正常 save 结束无残留）
         try:
             for _tmp in self.data_dir.glob("*.tmp"):
@@ -101,6 +154,8 @@ class XbdocStoreMixin:
 
         # 加载并自动标准化数据（有变才回写，避免每次启动空转 I/O）
         self._index: Dict[str, Dict[str, Any]] = self._load_json(self.index_path, {})
+        # WebUI 覆盖配置：叠加在 AstrBot 注入的 self.config 之上（删除 _conf_schema.json 后唯一持久入口）
+        self._load_plugin_config_overlay()
         _raw_seen = self._load_json(self.seen_path, {})
         # 污染自清：坏 key 整条扔；platform 脏字段——有真限定 key 的只清字段，
         # 无限定 key 配垃圾平台的整条扔（不可信，群下次露面自动重建）
@@ -182,12 +237,13 @@ class XbdocStoreMixin:
         return default
 
 
-    def _save_json(self, path: Path, data: Any) -> None:
+    def _save_json(self, path: Path, data: Any, indent: Optional[int] = None) -> None:
         # 原子写：先落 tmp 再 os.replace，同文件系统下读方永不见半截文件
+        # 默认紧凑（省 IO/磁盘）；需人工编辑的文件（如 plugin_config.json）显式传 indent=2
         try:
             with self._save_lock:
                 tmp = path.with_name(f"{path.name}.tmp")
-                tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                tmp.write_text(json.dumps(data, ensure_ascii=False, indent=indent), encoding="utf-8")
                 os.replace(tmp, path)
         except Exception as e:
             logger.error(f"[{PLUGIN_NAME}] 保存 {path.name} 失败: {e}")
@@ -904,6 +960,78 @@ class XbdocStoreMixin:
         self._save_json(self.bindings_path, self._bindings)
         return ent
 
+
+    # ---------- 插件配置（WebUI 读写 + data_dir 持久化） ----------
+    def _load_plugin_config_overlay(self) -> None:
+        """把 data_dir/plugin_config.json 中的合法键叠加到 self.config（WebUI 保存优先）。"""
+        try:
+            persisted = self._load_json(self.config_path, {})
+            if not isinstance(persisted, dict) or not persisted:
+                return
+            base = getattr(self, "config", None)
+            cfg = dict(base) if hasattr(base, "items") else {}
+            for k in CONFIG_DEFAULTS:
+                if k in persisted:
+                    cfg[k] = persisted[k]
+            self.config = cfg
+        except Exception:
+            pass
+
+    def get_plugin_config(self) -> Dict[str, Any]:
+        """当前生效配置：默认值打底，仅回传已知键。"""
+        out: Dict[str, Any] = {}
+        for k, d in CONFIG_DEFAULTS.items():
+            try:
+                v = self._cfg(k, d)
+            except Exception:
+                v = d
+            out[k] = v
+        return out
+
+    def get_config_meta(self) -> Dict[str, Dict[str, Any]]:
+        """设置页渲染元数据：key -> {description, hint, type, default}。"""
+        return {
+            k: {
+                **meta,
+                "default": CONFIG_DEFAULTS.get(k),
+            }
+            for k, meta in CONFIG_META.items()
+        }
+
+    @_locked
+    def save_plugin_config(self, incoming: Any) -> Dict[str, Any]:
+        """校验并保存 WebUI 设置；仅接受 CONFIG_DEFAULTS 已知键，类型/范围收敛后写回。"""
+        if not isinstance(incoming, dict):
+            raise ValueError("config 须为对象")
+        cfg = dict(getattr(self, "config", None) or {})
+        for k in CONFIG_DEFAULTS:
+            if k not in incoming:
+                continue
+            v = incoming[k]
+            if CONFIG_META.get(k, {}).get("type") == "bool":
+                if isinstance(v, str):
+                    v = v.strip().lower() in ("1", "true", "yes", "on")
+                cfg[k] = bool(v)
+            else:
+                try:
+                    iv = int(v)
+                except Exception:
+                    continue
+                if k == "max_inject_chars":
+                    cfg[k] = max(0, iv)
+                elif k in ("chunk_size", "chunk_overlap", "top_k"):
+                    if iv <= 0:
+                        continue
+                    if k == "chunk_size":
+                        iv = max(200, iv)
+                    elif k == "chunk_overlap":
+                        iv = max(0, iv)
+                    cfg[k] = iv
+        # 合并后的完整快照落盘（缺失键补默认，便于人工编辑）
+        snapshot = {k: cfg.get(k, CONFIG_DEFAULTS[k]) for k in CONFIG_DEFAULTS}
+        self.config = {**cfg, **snapshot}
+        self._save_json(self.config_path, snapshot, indent=2)
+        return dict(snapshot)
 
     # ---------- 动态配置读取（唯一来源：CONFIG_DEFAULTS + 实时 config） ----------
     def _cfg(self, key: str, default: Any = None) -> Any:

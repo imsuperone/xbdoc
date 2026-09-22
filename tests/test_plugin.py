@@ -348,15 +348,16 @@ def test_fetch_groups_concurrent_and_cached():
     assert [id(b) for b in second] == [id(b) for b in first], "缓存未生效"
 
 
-def test_config_defaults_in_sync():
-    # CONFIG_DEFAULTS 必须与 _conf_schema.json 默认值保持一致，双源漂移会配出玄学行为
+def test_config_defaults_complete():
+    # 配置唯一来源：CONFIG_DEFAULTS 与 CONFIG_META 必须键集一致，缺项会在设置页/持久化漏项
     import xbdoc_store as S
-    schema_path = Path(__file__).resolve().parent.parent / "_conf_schema.json"
-    schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    for k, v in S.CONFIG_DEFAULTS.items():
-        assert k in schema, f"配置项 {k} 在 _conf_schema.json 缺失"
-        assert schema[k].get("default") == v, f"配置项 {k} 默认值漂移: {v} != {schema[k].get('default')}"
-    assert set(schema.keys()) == set(S.CONFIG_DEFAULTS.keys()), "两边配置项集合不一致"
+
+    assert set(S.CONFIG_DEFAULTS) == set(S.CONFIG_META), "CONFIG_DEFAULTS/CONFIG_META 键集漂移"
+    for k, d in S.CONFIG_DEFAULTS.items():
+        assert S.CONFIG_META[k]["type"] in ("int", "bool"), k
+        assert "description" in S.CONFIG_META[k] and "hint" in S.CONFIG_META[k], k
+        _p, _ = _make_plugin()
+        assert _p.get_plugin_config()[k] == d
 
 
 def test_mode_validation_and_shortcuts():
@@ -552,7 +553,7 @@ def test_platform_field_scrub():
 
 if __name__ == "__main__":
     test_mro()
-    test_config_defaults_in_sync()
+    test_config_defaults_complete()
     test_init_store_normalize_and_tmp_cleanup()
     test_doc_retrieve_fulltext()
     test_resolve_session()

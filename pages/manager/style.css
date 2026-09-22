@@ -701,6 +701,26 @@ textarea.m3-field {
   filter: grayscale(0.3);
 }
 
+/* Plugin Settings Tab */
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 6px 28px;
+  align-items: start;
+}
+
+.settings-form .form-group {
+  margin-bottom: 12px;
+}
+
+.settings-form .m3-field {
+  max-width: 320px;
+}
+
+.settings-form .m3-switch-row {
+  margin-bottom: 12px;
+}
+
 /* Group Suggestion Dropdown (Android 16 Contact Card Style) */
 .suggest-dropdown {
   position: absolute;

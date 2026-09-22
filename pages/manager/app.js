@@ -1206,6 +1206,142 @@
     }
   }
 
+  // ---- Plugin Settings (WebUI 配置页) ----
+  let settingsMeta = {};
+  let settingsConfig = {};
+
+  async function loadSettings() {
+    try {
+      const res = await api.get("settings");
+      settingsMeta = res.meta || {};
+      settingsConfig = res.config || {};
+      renderSettings();
+    } catch (e) {
+      console.error("[DocMemory] loadSettings error:", e);
+      showToast("获取插件设置失败: " + e.message);
+    }
+  }
+
+  function renderSettings() {
+    const container = $("settingsForm");
+    if (!container) return;
+    const keys = Object.keys(settingsMeta);
+    if (!keys.length) {
+      container.innerHTML = `<span class="helper">暂无可配置项</span>`;
+      return;
+    }
+
+    container.innerHTML = keys.map((k) => {
+      const m = settingsMeta[k] || {};
+      const type = m.type || "int";
+      const desc = m.description || k;
+      const hint = m.hint || "";
+      const val = settingsConfig[k];
+
+      if (type === "bool") {
+        const on = Boolean(val);
+        return `
+          <div class="m3-switch-row" data-setting="${esc(k)}">
+            <div>
+              <div class="switch-label-title">${esc(desc)}</div>
+              <div class="switch-label-sub">${esc(hint)}</div>
+            </div>
+            <div class="segmented-choice" data-choice="${esc(k)}">
+              <button class="segmented-choice-btn ${on ? "active" : ""}" data-val="on" type="button">开</button>
+              <button class="segmented-choice-btn ${on ? "" : "active"}" data-val="off" type="button">关</button>
+            </div>
+          </div>`;
+      }
+
+      const min = k === "chunk_size" ? 200 : 0;
+      const step = 1;
+      return `
+        <div class="form-group" data-setting="${esc(k)}">
+          <label class="form-label" for="set_${esc(k)}">
+            ${esc(desc)}
+            <span class="helper">${esc(hint)}</span>
+          </label>
+          <input type="number" id="set_${esc(k)}" class="m3-field" inputmode="numeric"
+                 value="${val === undefined || val === null ? "" : esc(val)}"
+                 min="${min}" step="${step}" />
+        </div>`;
+    }).join("");
+  }
+
+  function collectSettings() {
+    const out = {};
+    for (const [k, m] of Object.entries(settingsMeta)) {
+      if ((m.type || "int") === "bool") {
+        const group = document.querySelector(`[data-choice="${k}"]`);
+        const active = group ? group.querySelector(".segmented-choice-btn.active") : null;
+        out[k] = active ? active.dataset.val === "on" : Boolean(m.default);
+      } else {
+        const el = $("set_" + k);
+        if (!el) continue;
+        const n = parseInt(el.value, 10);
+        // 非法整数不发送，让后端保留现值；后端仍会做范围收敛
+        if (Number.isFinite(n)) out[k] = n;
+      }
+    }
+    return out;
+  }
+
+  function applySettingsValues(src) {
+    for (const [k, m] of Object.entries(settingsMeta)) {
+      const val = src[k] !== undefined ? src[k] : m.default;
+      if ((m.type || "int") === "bool") {
+        const group = document.querySelector(`[data-choice="${k}"]`);
+        if (group) {
+          const want = val ? "on" : "off";
+          group.querySelectorAll(".segmented-choice-btn").forEach((b) => {
+            b.classList.toggle("active", b.dataset.val === want);
+          });
+        }
+      } else {
+        const el = $("set_" + k);
+        if (el) el.value = val === undefined || val === null ? "" : val;
+      }
+    }
+  }
+
+  function initSettings() {
+    const container = $("settingsForm");
+    if (container) {
+      container.addEventListener("click", (e) => {
+        const btn = e.target.closest(".segmented-choice-btn");
+        if (!btn) return;
+        const group = btn.closest(".segmented-choice");
+        if (!group) return;
+        group.querySelectorAll(".segmented-choice-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    }
+
+    const saveBtn = $("saveSettingsBtn");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        const config = collectSettings();
+        try {
+          const res = await api.post("settings/save", { config });
+          settingsConfig = res.config || config;
+          settingsMeta = res.meta || settingsMeta;
+          renderSettings();
+          showToast("✅ 插件设置已保存并生效");
+        } catch (err) {
+          showToast("保存失败: " + err.message);
+        }
+      });
+    }
+
+    const resetBtn = $("resetSettingsBtn");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        applySettingsValues({});
+        showToast("已回填默认值（点击保存后生效）");
+      });
+    }
+  }
+
   // ---- Refresh All Data Button ----
   function initRefreshButton() {
     const btn = $("refreshAllBtn");
@@ -1214,7 +1350,7 @@
     btn.addEventListener("click", async () => {
       showToast("正在刷新全部数据…");
       try {
-        await Promise.all([loadDocs(), loadBindings(), searchGroups("")]);
+        await Promise.all([loadDocs(), loadBindings(), loadSettings(), searchGroups("")]);
         showToast("数据已刷新完毕");
       } catch (err) {
         showToast("刷新部分失败: " + err.message);
@@ -1242,6 +1378,7 @@
     initBindingListEvents();
     initReaderEvents();
     initBackupButtons();
+    initSettings();
     initRefreshButton();
     updatePromptCount();
 
@@ -1254,7 +1391,7 @@
 
     // 3. Load backend data
     try {
-      await Promise.all([loadDocs(), loadBindings(), searchGroups("")]);
+      await Promise.all([loadDocs(), loadBindings(), loadSettings(), searchGroups("")]);
       console.log("[DocMemory] Initial data loaded successfully.");
     } catch (e) {
       console.warn("[DocMemory] Initial data load partial failure:", e);

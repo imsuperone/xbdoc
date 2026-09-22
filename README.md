@@ -92,7 +92,7 @@
 ## 📦 依赖
 
 -   `pypdf >= 4.3.0`、`python-docx >= 1.1.2`（仅 PDF / DOCX 需要，纯文本、Markdown、JSON 开箱即用）
--   上传上限 50MB；切片长度 / 重叠 / Top-K / 注入上限均可在插件配置中调整
+-   上传上限 50MB；切片长度 / 重叠 / Top-K / 注入上限 / 自动注入 / 未命中保底 / 私聊绑定 / 性能日志均可在 WebUI「插件设置」页调整。
 
 ## 🧾 备注
 
@@ -102,6 +102,6 @@
 -   `force` 开启但专属提示词为空时不再清空原人格；`shield` 开启仍会清空（符合其语义）。
 -   `/doc forget` 等同于 `/doc no`，同样仅管理员可用。
 -   关闭 `auto_inject` 后不再自动检索文档，但专属提示词与屏蔽依然生效。
--   数据持久化在 `data/plugin_data/astrbot_plugin_xbdoc`（`index.json` / `bindings.json` / `seen_groups.json` / `docs/`）。
+-   数据持久化在 `data/plugin_data/astrbot_plugin_xbdoc`（`index.json` / `bindings.json` / `seen_groups.json` / `plugin_config.json` / `docs/`）。
 -   卸载重装不会丢数据；要彻底清零请先停服再删除上述数据目录。
 -   自带 `tests/`（`python tests/test_retrieval.py`、`python tests/test_plugin.py`），改检索 / 会话 / 存储逻辑后先跑绿再提。

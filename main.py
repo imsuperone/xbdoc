@@ -22,7 +22,7 @@ except Exception:
 # 子模块导入：优先包内相对导入，失败时回退到文件目录直载（兼容各类加载器）
 try:
     from .xbdoc_retrieval import score_chunk_bm25, tokenize
-    from .xbdoc_inject import apply_system_prompt, build_system_text, build_workspace_text, truncate_text
+    from .xbdoc_inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
     from .xbdoc_store import PLUGIN_NAME, XbdocStoreMixin
     from .xbdoc_commands import XbdocCommandsMixin
     from .xbdoc_webapi import XbdocWebAPIMixin
@@ -32,7 +32,7 @@ except ImportError:
     if _plug_dir not in _sys.path:
         _sys.path.insert(0, _plug_dir)
     from xbdoc_retrieval import score_chunk_bm25, tokenize
-    from xbdoc_inject import apply_system_prompt, build_system_text, build_workspace_text, truncate_text
+    from xbdoc_inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
     from xbdoc_store import PLUGIN_NAME, XbdocStoreMixin
     from xbdoc_commands import XbdocCommandsMixin
     from xbdoc_webapi import XbdocWebAPIMixin
@@ -134,7 +134,8 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
         results = scored[:max(1, top_k)]
 
         # 保底策略：若未命中具体切片关键词，但本群确有绑定文档，保底载入首切片，确保模型拥有文档认知
-        if not results and doc_ids:
+        # （fallback_inject 可在 WebUI 关闭）
+        if not results and doc_ids and bool(self._cfg("fallback_inject")):
             for did in doc_ids[:2]:
                 chunks = self._load_chunks(did)
                 if chunks:
@@ -152,9 +153,11 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
         hits = self.retrieve(query, doc_ids)
         if not hits:
             return ""
-        # 整体拼好再统一截断（与 system/workspace 同一截断语义），预算用满、不浪费
-        body = "\n\n".join(
-            f"{h['filename']} (片段{h['chunk_idx']+1}):\n{h['text']}" for h in hits
+        # 整体拼好再统一截断（与 system/workspace 同一截断语义），空白折叠省 token
+        body = fold_ws(
+            "\n\n".join(
+                f"{h['filename']} (片段{h['chunk_idx']+1}):\n{h['text']}" for h in hits
+            )
         )
         return truncate_text(body, max_chars)
 
@@ -299,7 +302,15 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             if not injected:
                 try:
                     base = str(getattr(req, "prompt", "") or "")
-                    req.prompt = f"{base}\n\n【参考资料】\n{inject}".strip()
+                    # 剥离历史尾部累积的参考资料块，避免回退路径逐轮污染 prompt
+                    cut = base.rfind("【参考资料】")
+                    if cut >= 0:
+                        base = base[:cut].rstrip()
+                    req.prompt = (
+                        f"{base}\n\n【参考资料】\n{inject}".strip()
+                        if base
+                        else f"【参考资料】\n{inject}"
+                    )
                 except Exception:
                     pass
 
@@ -372,10 +383,16 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
     async def doc_cmd(self, event: AstrMessageEvent):
         """文档记忆助手统一指令入口 /doc [子指令]（参数在此一次解析，handler 只收 args/tail）"""
         raw = (event.message_str or "").strip()
+        # 兼容 CQ/at 前缀与无 `/doc` 前缀两种 message_str 形态
         tokens = [t for t in re.split(r"\s+", raw) if t]
-        sub = tokens[1].lower() if len(tokens) > 1 else ""
-        tail = re.sub(r"^/\S+\s+\S+\s*", "", raw).strip() if sub else ""
-        args = [t for t in re.split(r"\s+", tail) if t]
+        cmd_i = next((i for i, t in enumerate(tokens) if t.startswith("/")), None)
+        if cmd_i is not None:
+            sub = tokens[cmd_i + 1].lower() if len(tokens) > cmd_i + 1 else ""
+            args = tokens[cmd_i + 2:]
+        else:
+            sub = tokens[0].lower() if tokens else ""
+            args = tokens[1:]
+        tail = " ".join(args)
 
         if not sub or sub in ("help", "h", "?", "帮助", "菜单"):
             async for res in self._cmd_help(event):
@@ -427,3 +444,9 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
 
     async def terminate(self):
         self.save_all()
+        ex = getattr(self, "_executor", None)
+        if ex is not None:
+            try:
+                ex.shutdown(wait=False)
+            except Exception:
+                pass
