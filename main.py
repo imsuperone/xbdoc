@@ -383,15 +383,22 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
     async def doc_cmd(self, event: AstrMessageEvent):
         """文档记忆助手统一指令入口 /xbdoc [子指令]（参数在此一次解析，handler 只收 args/tail）"""
         raw = (event.message_str or "").strip()
-        # 兼容 CQ/at 前缀与无 `/xbdoc` 前缀两种 message_str 形态
+        # AstrBot 会先剥 wake_prefix（/），handler 里常见形态：
+        #   "xbdoc" / "xbdoc status"（已剥）与 "/xbdoc status"（未剥/兼容）
+        # 也可能夹杂 CQ/at 前缀 token，需先定位指令本体再取子指令
         tokens = [t for t in re.split(r"\s+", raw) if t]
-        cmd_i = next((i for i, t in enumerate(tokens) if t.startswith("/")), None)
-        if cmd_i is not None:
-            sub = tokens[cmd_i + 1].lower() if len(tokens) > cmd_i + 1 else ""
-            args = tokens[cmd_i + 2:]
-        else:
-            sub = tokens[0].lower() if tokens else ""
-            args = tokens[1:]
+        body_i = next(
+            (i for i, t in enumerate(tokens) if t.lower() in ("/xbdoc", "xbdoc")),
+            None,
+        )
+        if body_i is None:
+            # 兜底：任意 /xxx 作为本体（兼容旧形态/自定义唤醒词残留）
+            body_i = next((i for i, t in enumerate(tokens) if t.startswith("/")), -1)
+        rest = tokens[body_i + 1:]
+        if rest and rest[0].lower() in ("/xbdoc", "xbdoc"):
+            rest = rest[1:]
+        sub = rest[0].lower() if rest else ""
+        args = rest[1:]
         tail = " ".join(args)
 
         if not sub or sub in ("help", "h", "?", "帮助", "菜单"):
