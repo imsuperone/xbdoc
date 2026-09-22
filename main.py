@@ -379,12 +379,32 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 pass
             return False
 
+    @staticmethod
+    def _orig_message_text(event: AstrMessageEvent) -> str:
+        """还原用户原文：优先消息链 Plain（保留被剥掉的 /），失败回退 message_str。"""
+        try:
+            get_m = getattr(event, "get_messages", None)
+            msgs = get_m() if callable(get_m) else None
+            if msgs:
+                parts = [getattr(m, "text", "") for m in msgs]
+                joined = "".join(p for p in parts if isinstance(p, str)).strip()
+                if joined:
+                    return joined
+        except Exception:
+            pass
+        return (getattr(event, "message_str", "") or "").strip()
+
     @filter.command("xbdoc")
     async def doc_cmd(self, event: AstrMessageEvent):
         """文档记忆助手统一指令入口 /xbdoc [子指令]（参数在此一次解析，handler 只收 args/tail）"""
+        # AstrBot 会从 message_str 剥掉唤醒前缀 /；消息链 Plain 仍保留原文。
+        # 仅带 / 的 /xxx 才当指令：裸 xbdoc（私聊免前缀、@机器人等）不触发，回落普通消息。
+        orig = self._orig_message_text(event)
+        if not orig.startswith("/"):
+            return
+
         raw = (event.message_str or "").strip()
-        # AstrBot 会先剥 wake_prefix（/），handler 里常见形态：
-        #   "xbdoc" / "xbdoc status"（已剥）与 "/xbdoc status"（未剥/兼容）
+        # handler 内常见形态："xbdoc" / "xbdoc status"（已剥）与 "/xbdoc status"（未剥/兼容）
         # 也可能夹杂 CQ/at 前缀 token，需先定位指令本体再取子指令
         tokens = [t for t in re.split(r"\s+", raw) if t]
         body_i = next(
