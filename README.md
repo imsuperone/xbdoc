@@ -14,8 +14,8 @@
 -   🧠 **零 Embedding 检索**：无需向量模型，多语言分词 + BM25（idf + 长度归一），切片词频全缓存，Top-K 注入。
 -   👥 **按群彻底隔离**：会话 Key 归一（`group:` / `private:`），绑定、提示词、屏蔽、模式各群独立。
 -   🏷️ **群专属提示词**：无文档也可独立生效；`shield` 清空原人格、`force` 强制唯一系统词，三模式下恰好生效一次。
--   🧹 **解绑即恢复出厂**：`/doc unbind` 留空清空文档、提示词、屏蔽、强制注入，空配置条目彻底删除。
--   🧠 **历史强行遗忘**：`/doc no` 截断此前全部上下文，`off` 恢复。
+-   🧹 **解绑即恢复出厂**：`/xbdoc unbind` 留空清空文档、提示词、屏蔽、强制注入，空配置条目彻底删除。
+-   🧠 **历史强行遗忘**：`/xbdoc no` 截断此前全部上下文，`off` 恢复。
 -   💻 **WebUI 管理台**：文档上传 / 预览 / 下载、群搜索（含适配器主动拉取）、绑定表单、模式直选、深浅主题、绑定备份导出 / 导入（合并或覆盖，不存在的文档自动跳过）。
 -   📦 **改名无痛迁移**：`astrbot_plugin_doc_memory` / `xbdoc` 旧数据目录自动移动迁移。
 
@@ -28,21 +28,21 @@
     https://github.com/imsuperone/xbdoc.git
     
 2.  重启 AstrBot，插件自动加载（如需 PDF / DOCX 解析会自动安装 `requirements.txt` 依赖）。
-3.  聊天发送 `/doc` 查看菜单，WebUI 打开 `文档记忆助手` 页面传文档、绑群。
+3.  聊天发送 `/xbdoc` 查看菜单，WebUI 打开 `文档记忆助手` 页面传文档、绑群。
 
-## 🚀 聊天指令（`/doc` 群内管理，点开分组查看）
+## 🚀 聊天指令（`/xbdoc` 群内管理，点开分组查看）
 
 <details>
 <summary>📖 查看</summary>
 
 | 指令 | 说明 |
 | --- | --- |
-| `/doc` | 完整菜单 |
-| `/doc status` | 本群绑定、模式、屏蔽、提示词状态 |
-| `/doc list` | 知识库文档与 ID |
-| `/doc workspace` | 工作区挂载清单 |
-| `/doc search <词>` | 检索绑定文档 |
-| `/doc read <ID> [n]` | 预览文档切片 |
+| `/xbdoc` | 完整菜单 |
+| `/xbdoc status` | 本群绑定、模式、屏蔽、提示词状态 |
+| `/xbdoc list` | 知识库文档与 ID |
+| `/xbdoc workspace` | 工作区挂载清单 |
+| `/xbdoc search <词>` | 检索绑定文档 |
+| `/xbdoc read <ID> [n]` | 预览文档切片 |
 
 </details>
 
@@ -51,8 +51,8 @@
 
 | 指令 | 说明 |
 | --- | --- |
-| `/doc bind <ID...>` | 追加绑定，自动合并 |
-| `/doc unbind [ID...]` | 解绑；留空全清，提示词一并清除 |
+| `/xbdoc bind <ID...>` | 追加绑定，自动合并 |
+| `/xbdoc unbind [ID...]` | 解绑；留空全清，提示词一并清除 |
 
 </details>
 
@@ -61,9 +61,9 @@
 
 | 指令 | 说明 |
 | --- | --- |
-| `/doc mode s\|w\|r` | 强制遵守 / 工作区 / 仅参考 |
-| `/doc shield on\|off` | 清空 / 保留原人格 |
-| `/doc force on\|off` | 专属提示词唯一生效 |
+| `/xbdoc mode s\|w\|r` | 强制遵守 / 工作区 / 仅参考 |
+| `/xbdoc shield on\|off` | 清空 / 保留原人格 |
+| `/xbdoc force on\|off` | 专属提示词唯一生效 |
 
 </details>
 
@@ -72,9 +72,9 @@
 
 | 指令 | 说明 |
 | --- | --- |
-| `/doc prompt` | 查看本群配置详情 |
-| `/doc prompt_set <内容>` | 设置专属提示词 |
-| `/doc prompt_clear` | 清除专属提示词 |
+| `/xbdoc prompt` | 查看本群配置详情 |
+| `/xbdoc prompt_set <内容>` | 设置专属提示词 |
+| `/xbdoc prompt_clear` | 清除专属提示词 |
 
 </details>
 
@@ -83,7 +83,7 @@
 
 | 指令 | 说明 |
 | --- | --- |
-| `/doc no [off]` | 忘掉此前消息 / 恢复 |
+| `/xbdoc no [off]` | 忘掉此前消息 / 恢复 |
 
 </details>
 
@@ -98,9 +98,9 @@
 
 -   私聊独立绑定受 `allow_private_bind` 控制（默认开启），和机器人私聊一句后即可在 WebUI 搜到并绑定。
 -   会话命名空间按 `group:平台:群号` / `private:平台:UID` 划分，跨平台同号群彻底隔离；WebUI 手填短格式（`group:123`）按 seen 自动补平台限定。
--   `/doc mode` 支持 `s / w / r` 快捷（system / workspace / reference），未知模式会明确报错，不再静默回落。
+-   `/xbdoc mode` 支持 `s / w / r` 快捷（system / workspace / reference），未知模式会明确报错，不再静默回落。
 -   `force` 开启但专属提示词为空时不再清空原人格；`shield` 开启仍会清空（符合其语义）。
--   `/doc forget` 等同于 `/doc no`，同样仅管理员可用。
+-   `/xbdoc forget` 等同于 `/xbdoc no`，同样仅管理员可用。
 -   关闭 `auto_inject` 后不再自动检索文档，但专属提示词与屏蔽依然生效。
 -   数据持久化在 `data/plugin_data/astrbot_plugin_xbdoc`（`index.json` / `bindings.json` / `seen_groups.json` / `plugin_config.json` / `docs/`）。
 -   卸载重装不会丢数据；要彻底清零请先停服再删除上述数据目录。

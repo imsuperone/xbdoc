@@ -1,4 +1,4 @@
-"""xbdoc 指令层：/doc 子指令实现。
+"""xbdoc 指令层：/xbdoc 子指令实现。
 
 被主插件多继承（Mixin），无 @filter 装饰方法，由主入口 doc_cmd 分发调用。
 """
@@ -42,28 +42,28 @@ class XbdocCommandsMixin:
         menu = (
             "📚 文档记忆助手 · 指令菜单\n\n"
             "📖 查看\n"
-            "• /doc status — 本群状态；/doc list — 文档列表\n"
-            "• /doc workspace — 工作区挂载清单\n"
-            "• /doc search <词> — 检索绑定文档；/doc read <ID> [n] — 预览切片\n\n"
+            "• /xbdoc status — 本群状态；/xbdoc list — 文档列表\n"
+            "• /xbdoc workspace — 工作区挂载清单\n"
+            "• /xbdoc search <词> — 检索绑定文档；/xbdoc read <ID> [n] — 预览切片\n\n"
             "🔗 绑定（管理员）\n"
-            "• /doc bind <ID...> — 追加绑定，自动合并\n"
-            "• /doc unbind [ID...] — 解绑，留空全清（含提示词/屏蔽）\n\n"
+            "• /xbdoc bind <ID...> — 追加绑定，自动合并\n"
+            "• /xbdoc unbind [ID...] — 解绑，留空全清（含提示词/屏蔽）\n\n"
             "🎛️ 模式（管理员）\n"
-            "• /doc mode system|workspace|reference — 切换生效模式\n"
-            "• /doc shield on|off — 清空/保留原人格\n"
-            "• /doc force on|off — 专属提示词唯一生效\n\n"
+            "• /xbdoc mode system|workspace|reference — 切换生效模式\n"
+            "• /xbdoc shield on|off — 清空/保留原人格\n"
+            "• /xbdoc force on|off — 专属提示词唯一生效\n\n"
             "🏷️ 提示词（管理员）\n"
-            "• /doc prompt — 查看；/doc prompt_set <内容> — 设置\n"
-            "• /doc prompt_clear — 清除\n\n"
+            "• /xbdoc prompt — 查看；/xbdoc prompt_set <内容> — 设置\n"
+            "• /xbdoc prompt_clear — 清除\n\n"
             "🧹 历史（管理员）\n"
-            "• /doc no [off] — 忘掉此前消息 / 恢复\n\n"
+            "• /xbdoc no [off] — 忘掉此前消息 / 恢复\n\n"
             "💡 模式：system 强制遵守 · workspace 工作区 · reference 仅参考"
         )
         yield event.plain_result(menu)
 
 
     async def doc_list(self, event: AstrMessageEvent):
-        """查看知识库中所有文档 /doc list"""
+        """查看知识库中所有文档 /xbdoc list"""
         docs = self.list_documents()
         if not docs:
             yield event.plain_result(
@@ -78,12 +78,12 @@ class XbdocCommandsMixin:
             lines.append(f"• 文档ID：{m['doc_id']}")
             lines.append(f"• 规模：{m['chunks']} 切片 · {m['text_len']:,} 字\n")
 
-        lines.append("💡 绑定到本群：/doc bind <文档ID>")
+        lines.append("💡 绑定到本群：/xbdoc bind <文档ID>")
         yield event.plain_result("\n".join(lines).strip())
 
 
     async def doc_status(self, event: AstrMessageEvent):
-        """查看本会话绑定的文档 /doc status"""
+        """查看本会话绑定的文档 /xbdoc status"""
         ids = self.get_bound_doc_ids(event)
         keys = self._session_keys(event)
         sess = self._effective_session(event)
@@ -110,7 +110,7 @@ class XbdocCommandsMixin:
                     lines.append("⚡ 强制注入模式已激活：已清空其他提示词，专属提示词作为底层唯一系统词。")
             else:
                 lines.append("⚠️ 本群当前未绑定任何文档。")
-                lines.append("💡 发送 /doc list 查看可用文档，或发送 /doc bind <ID> 快速绑定。")
+                lines.append("💡 发送 /xbdoc list 查看可用文档，或发送 /xbdoc bind <ID> 快速绑定。")
         else:
             lines.append(f"📖 已绑定文档（共 {len(ids)} 篇）：")
             for idx, d in enumerate(ids, 1):
@@ -124,14 +124,14 @@ class XbdocCommandsMixin:
                 lines.append("⚡ 说明：大模型已将文档作为最高系统设定执行，强制遵守文档规则与设定。")
             else:
                 lines.append("📖 说明：群内提问相关内容时，AI 将检索片段作为参考资料引用回答。")
-            lines.append("\n💡 切换模式：/doc mode workspace / system / reference")
-            lines.append("💡 查看工作区：/doc workspace")
-            lines.append("💡 切换屏蔽：/doc shield on / off")
+            lines.append("\n💡 切换模式：/xbdoc mode workspace / system / reference")
+            lines.append("💡 查看工作区：/xbdoc workspace")
+            lines.append("💡 切换屏蔽：/xbdoc shield on / off")
         yield event.plain_result("\n".join(lines).strip())
 
 
     async def doc_workspace(self, event: AstrMessageEvent):
-        """查看当前模拟工作区状态与文件清单 /doc workspace"""
+        """查看当前模拟工作区状态与文件清单 /xbdoc workspace"""
         ids = self.get_bound_doc_ids(event)
         sess = self._effective_session(event)
         key = str(sess.get("matched_key") or self._canonical_key(event))
@@ -142,13 +142,13 @@ class XbdocCommandsMixin:
                 f"💻 模拟工作区详情（{key}）\n\n"
                 f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else '📖 普通模式'}\n"
                 "⚠️ 当前工作区尚未挂载用户文档。\n"
-                "💡 发送 /doc list 查看可用文档，使用 /doc bind <ID> 挂载文件到工作区。"
+                "💡 发送 /xbdoc list 查看可用文档，使用 /xbdoc bind <ID> 挂载文件到工作区。"
             )
             return
 
         lines = [
             f"💻 模拟工作区详情（{key}）\n",
-            f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else '📖 普通模式 (发送 /doc mode workspace 切换为工作区)'}",
+            f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else '📖 普通模式 (发送 /xbdoc mode workspace 切换为工作区)'}",
             f"• 挂载文件数量：共 {len(ids)} 篇文档\n",
             "📁 工作区根目录 [/workspace] 文件清单：",
         ]
@@ -164,22 +164,22 @@ class XbdocCommandsMixin:
 
         lines.append(f"\n📊 工作区总文本容量：{total_len:,} 字符")
         if mode != "workspace":
-            lines.append("\n💡 发送 /doc mode workspace 可切换为工作区模式。")
+            lines.append("\n💡 发送 /xbdoc mode workspace 可切换为工作区模式。")
         yield event.plain_result("\n".join(lines).strip())
 
 
     async def doc_bind(self, event: AstrMessageEvent, args: List[str]):
-        """绑定文档 /doc bind <id1> [id2...]（追加到本群已有绑定，管理员）"""
+        """绑定文档 /xbdoc bind <id1> [id2...]（追加到本群已有绑定，管理员）"""
         ids = self._parse_doc_ids(*args)
         if not ids:
             yield event.plain_result(
-                "❌ 用法错误：/doc bind <文档ID1> [文档ID2...]\n"
-                "💡 可先发送 /doc list 查看知识库中可用的文档 ID。"
+                "❌ 用法错误：/xbdoc bind <文档ID1> [文档ID2...]\n"
+                "💡 可先发送 /xbdoc list 查看知识库中可用的文档 ID。"
             )
             return
         bad = [i for i in ids if i not in self._index]
         if bad:
-            yield event.plain_result(f"❌ 绑定失败：以下 ID 不存在于知识库中：\n{', '.join(bad)}\n\n💡 请发送 /doc list 查看可用 ID。")
+            yield event.plain_result(f"❌ 绑定失败：以下 ID 不存在于知识库中：\n{', '.join(bad)}\n\n💡 请发送 /xbdoc list 查看可用 ID。")
             return
         # 读改写加锁：两端并发写同一会话不丢数据
         with self._save_lock:
@@ -198,14 +198,14 @@ class XbdocCommandsMixin:
             for did in dup:
                 lines.append(f"• 已在绑定中：{self._index[did]['filename']}（ID: {did}）")
             lines.append(f"\n本群共绑定 {total} 篇，当前模式：{mode_txt}")
-            lines.append("💡 切换为强制遵守模式：/doc mode system")
-            lines.append("💡 切换为参考资料模式：/doc mode reference")
+            lines.append("💡 切换为强制遵守模式：/xbdoc mode system")
+            lines.append("💡 切换为参考资料模式：/xbdoc mode reference")
             msg = "\n".join(lines).strip()
         yield event.plain_result(msg)
 
 
     async def doc_unbind(self, event: AstrMessageEvent, args: List[str]):
-        """解绑文档 /doc unbind [id...]，留空则清空绑定（管理员）"""
+        """解绑文档 /xbdoc unbind [id...]，留空则清空绑定（管理员）"""
         tokens = self._parse_doc_ids(*args)
         with self._save_lock:
             keys = self._find_matching_keys(event)
@@ -264,14 +264,14 @@ class XbdocCommandsMixin:
 
 
     async def doc_search(self, event: AstrMessageEvent, args: List[str]):
-        """检索绑定文档 /doc search <关键词>"""
+        """检索绑定文档 /xbdoc search <关键词>"""
         q = " ".join(args).strip()
         if not q:
-            yield event.plain_result("❌ 用法错误：/doc search <关键词或提问内容>")
+            yield event.plain_result("❌ 用法错误：/xbdoc search <关键词或提问内容>")
             return
         ids = self.get_bound_doc_ids(event)
         if not ids:
-            yield event.plain_result("⚠️ 本群尚未绑定任何文档，请先使用 /doc bind <ID> 绑定。")
+            yield event.plain_result("⚠️ 本群尚未绑定任何文档，请先使用 /xbdoc bind <ID> 绑定。")
             return
         hits = self.retrieve(q, ids, self._cfg_int("top_k"))
         if not hits:
@@ -285,14 +285,14 @@ class XbdocCommandsMixin:
 
 
     async def doc_read(self, event: AstrMessageEvent, args: List[str]):
-        """预览文档切片 /doc read <id> [片段号]"""
+        """预览文档切片 /xbdoc read <id> [片段号]"""
         doc_id = args[0] if args else ""
         num = args[1] if len(args) > 1 else "1"
         if not doc_id:
-            yield event.plain_result("❌ 用法错误：/doc read <文档ID> [片段号]，ID 可用 /doc list 查看。")
+            yield event.plain_result("❌ 用法错误：/xbdoc read <文档ID> [片段号]，ID 可用 /xbdoc list 查看。")
             return
         if doc_id not in self._index:
-            yield event.plain_result(f"❌ 未找到文档 ID「{doc_id}」，请发送 /doc list 查看可用 ID。")
+            yield event.plain_result(f"❌ 未找到文档 ID「{doc_id}」，请发送 /xbdoc list 查看可用 ID。")
             return
         try:
             n = max(1, int(num or "1"))
@@ -312,7 +312,7 @@ class XbdocCommandsMixin:
 
 
     async def doc_prompt(self, event: AstrMessageEvent):
-        """查看本群提示词、生效模式与屏蔽状态 /doc prompt"""
+        """查看本群提示词、生效模式与屏蔽状态 /xbdoc prompt"""
         sess = self._effective_session(event)
         doc_ids = sess.get("doc_ids", [])
         eff_prompt = str(sess.get("prompt") or "").strip()
@@ -329,20 +329,20 @@ class XbdocCommandsMixin:
             f"• 绑定文档：{len(doc_ids)} 篇\n"
             f"• 专属提示词：\n{preview or '（未设置）'}\n\n"
             "⚙️ 管理指令：\n"
-            "• /doc mode system | workspace | reference\n"
-            "• /doc shield on | off\n"
-            "• /doc prompt_set <内容>\n"
-            "• /doc prompt_clear"
+            "• /xbdoc mode system | workspace | reference\n"
+            "• /xbdoc shield on | off\n"
+            "• /xbdoc prompt_set <内容>\n"
+            "• /xbdoc prompt_clear"
         )
 
 
     async def doc_mode(self, event: AstrMessageEvent, args: List[str]):
-        """设置本群文档生效模式 /doc mode workspace|system|reference（管理员，需先绑定文档）"""
+        """设置本群文档生效模式 /xbdoc mode workspace|system|reference（管理员，需先绑定文档）"""
         read_key, ent = self._resolve_session(event, create=False)
         if not [d for d in ent.get("doc_ids", []) if d in self._index]:
             yield event.plain_result(
                 f"⚠️ 本群（{read_key}）当前未绑定任何文档，无法切换生效模式。\n\n"
-                "💡 请先使用 /doc bind <ID> 绑定文档后再切换。"
+                "💡 请先使用 /xbdoc bind <ID> 绑定文档后再切换。"
             )
             return
         raw = " ".join(args).strip().lower()
@@ -350,9 +350,9 @@ class XbdocCommandsMixin:
             yield event.plain_result(
                 f"📌 当前群生效模式：{mode_label(ent.get('mode'))}\n\n"
                 "切换指令：\n"
-                "• /doc mode workspace（模拟工作区，仅限工作区文档）\n"
-                "• /doc mode system（强制遵守文档，角色与指令模式）\n"
-                "• /doc mode reference（仅作参考资料，知识库问答）"
+                "• /xbdoc mode workspace（模拟工作区，仅限工作区文档）\n"
+                "• /xbdoc mode system（强制遵守文档，角色与指令模式）\n"
+                "• /xbdoc mode reference（仅作参考资料，知识库问答）"
             )
             return
         norm = self._normalize_mode(raw)
@@ -368,7 +368,7 @@ class XbdocCommandsMixin:
             yield event.plain_result(
                 f"💻 本群模式已切换为【模拟工作区】！\n\n"
                 f"当前会话已挂载进入独立工作区沙箱 (/workspace)，上下文中【仅包含】绑定的文档文件，模型将严格基于工作区文件进行专业分析、开发与问答。\n"
-                f"💡 可发送 /doc workspace 查看工作区挂载清单。"
+                f"💡 可发送 /xbdoc workspace 查看工作区挂载清单。"
             )
         elif norm == "system":
             yield event.plain_result(
@@ -383,10 +383,10 @@ class XbdocCommandsMixin:
 
 
     async def doc_prompt_set(self, event: AstrMessageEvent, tail: str):
-        """设置本群专属提示词 /doc prompt_set <内容>（管理员；不设上限，保证完整注入）"""
+        """设置本群专属提示词 /xbdoc prompt_set <内容>（管理员；不设上限，保证完整注入）"""
         text = (tail or "").strip()
         if len(text) < 2:
-            yield event.plain_result("用法：/doc prompt_set <本群专属提示词内容>，至少2个字。")
+            yield event.plain_result("用法：/xbdoc prompt_set <本群专属提示词内容>，至少2个字。")
             return
         with self._save_lock:
             key, _ = self._resolve_session(event, create=False)
@@ -395,12 +395,12 @@ class XbdocCommandsMixin:
             f"✅【本群专属提示词已生效】\n"
             f"会话标识：{key}\n"
             f"提示词字数：{len(text)} 字\n\n"
-            f"💡 可发送 /doc prompt 查看详情，发送 /doc prompt_clear 可清除。"
+            f"💡 可发送 /xbdoc prompt 查看详情，发送 /xbdoc prompt_clear 可清除。"
         )
 
 
     async def doc_prompt_clear(self, event: AstrMessageEvent):
-        """清空本群提示词 /doc prompt_clear（管理员）"""
+        """清空本群提示词 /xbdoc prompt_clear（管理员）"""
         with self._save_lock:
             key, ent = self._resolve_session(event, create=False)
             if not ent:
@@ -427,14 +427,14 @@ class XbdocCommandsMixin:
 
 
     async def doc_shield(self, event: AstrMessageEvent, args: List[str]):
-        """本群屏蔽 AstrBot 原人格开关 /doc shield on|off（管理员）"""
+        """本群屏蔽 AstrBot 原人格开关 /xbdoc shield on|off（管理员）"""
         raw = " ".join(args)
         with self._save_lock:
             key, _ = self._resolve_session(event, create=False)
             cur_shield = bool((self._bindings.get(key) or {}).get("shield", False))
             target = self._parse_on_off(raw, cur_shield)
             if target is None:
-                msg = "❌ 用法错误：/doc shield on（开启） | off（关闭）"
+                msg = "❌ 用法错误：/xbdoc shield on（开启） | off（关闭）"
             else:
                 ent = self._get_entry(key)
                 ent["shield"] = bool(target)
@@ -448,14 +448,14 @@ class XbdocCommandsMixin:
 
 
     async def doc_force(self, event: AstrMessageEvent, args: List[str]):
-        """切换强制注入系统提示词开关 /doc force on|off（管理员）"""
+        """切换强制注入系统提示词开关 /xbdoc force on|off（管理员）"""
         raw = " ".join(args)
         with self._save_lock:
             key, _ = self._resolve_session(event, create=False)
             cur = bool((self._bindings.get(key) or {}).get("force_system_prompt", False))
             target = self._parse_on_off(raw, cur)
             if target is None:
-                msg = "用法：/doc force on (开启强制注入) | off (关闭)"
+                msg = "用法：/xbdoc force on (开启强制注入) | off (关闭)"
             else:
                 ent = self._get_entry(key)
                 ent["force_system_prompt"] = bool(target)
@@ -469,7 +469,7 @@ class XbdocCommandsMixin:
 
 
     async def doc_no(self, event: AstrMessageEvent, args: List[str]):
-        """清空历史记忆并停止读取此指令之前的消息 /doc no [off]"""
+        """清空历史记忆并停止读取此指令之前的消息 /xbdoc no [off]"""
         raw = " ".join(args).strip().lower()
         with self._save_lock:
             key, _ = self._resolve_session(event, create=False)
@@ -489,7 +489,7 @@ class XbdocCommandsMixin:
                     f"🧹【已清空历史消息记忆】\n\n"
                     f"本群（{key}）已彻底清空并停止读取此指令之前的所有消息！\n"
                     "此前哪怕有聊天记录也会全部忘掉，后续仅响应当前提问与绑定文档。\n\n"
-                    "💡 如需恢复读取历史聊天：/doc no off"
+                    "💡 如需恢复读取历史聊天：/xbdoc no off"
                 )
 
         # 同步重置当前底层对话会话 ID（仅开启断史时；字段不存在则跳过）

@@ -205,7 +205,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             custom_prompt = str(sess.get("prompt") or "").strip()
             ignore_history = bool(sess.get("ignore_history", False))
 
-            # 0. /doc no 指令支持：彻底清空此前所有历史消息，不再读取与记忆
+            # 0. /xbdoc no 指令支持：彻底清空此前所有历史消息，不再读取与记忆
             if ignore_history:
                 if hasattr(req, "contexts") and isinstance(req.contexts, list):
                     req.contexts.clear()
@@ -379,11 +379,11 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 pass
             return False
 
-    @filter.command("doc")
+    @filter.command("xbdoc")
     async def doc_cmd(self, event: AstrMessageEvent):
-        """文档记忆助手统一指令入口 /doc [子指令]（参数在此一次解析，handler 只收 args/tail）"""
+        """文档记忆助手统一指令入口 /xbdoc [子指令]（参数在此一次解析，handler 只收 args/tail）"""
         raw = (event.message_str or "").strip()
-        # 兼容 CQ/at 前缀与无 `/doc` 前缀两种 message_str 形态
+        # 兼容 CQ/at 前缀与无 `/xbdoc` 前缀两种 message_str 形态
         tokens = [t for t in re.split(r"\s+", raw) if t]
         cmd_i = next((i for i, t in enumerate(tokens) if t.startswith("/")), None)
         if cmd_i is not None:
@@ -399,7 +399,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 yield res
             return
 
-        # 管理员指令校验（别名同样受控，防止 /doc forget 绕过 /doc no 的权限）
+        # 管理员指令校验（别名同样受控，防止 /xbdoc forget 绕过 /xbdoc no 的权限）
         admin_subs = {"bind", "unbind", "mode", "shield", "force", "prompt_set", "prompt_clear",
                       "no", "forget", "clear_history", "重置记忆"}
         if sub in admin_subs:
@@ -439,7 +439,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             async for res in with_args[sub](event, args):
                 yield res
         else:
-            yield event.plain_result(f"❓ 未知子指令「{sub}」，发送 /doc 可查看可用指令菜单。")
+            yield event.plain_result(f"❓ 未知子指令「{sub}」，发送 /xbdoc 可查看可用指令菜单。")
 
 
     async def terminate(self):

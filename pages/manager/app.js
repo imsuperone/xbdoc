@@ -839,7 +839,7 @@
         <div class="empty-state">
           <div class="empty-state-icon">🔗</div>
           <h3>暂无已绑定的会话</h3>
-          <p>您可以在上方选择群聊与文档进行绑定，也可在群内发送 /doc bind 快捷绑定。</p>
+          <p>您可以在上方选择群聊与文档进行绑定，也可在群内发送 /xbdoc bind 快捷绑定。</p>
         </div>`;
       return;
     }
