@@ -5,3 +5,4 @@ __pycache__/
 *.tmp
 *.bak
 data_store/
+tests/
