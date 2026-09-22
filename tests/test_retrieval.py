@@ -12,8 +12,8 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from xbdoc_inject import build_system_text, build_workspace_text, truncate_text
-from xbdoc_retrieval import chunk_text, score_chunk_bm25, tokenize
+from core.inject import build_system_text, build_workspace_text, truncate_text
+from core.retrieval import chunk_text, score_chunk_bm25, tokenize
 
 
 def _idf(counters):
@@ -87,7 +87,7 @@ def test_docx_tables():
     except ImportError:
         return  # 环境无 python-docx 时跳过（AstrBot 侧安装后生效）
     import io
-    from xbdoc_retrieval import extract_text_from_bytes
+    from core.retrieval import extract_text_from_bytes
     doc = docx.Document()
     doc.add_paragraph("正文段落")
     t = doc.add_table(rows=1, cols=2)

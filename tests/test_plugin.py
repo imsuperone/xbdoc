@@ -249,7 +249,7 @@ def test_prompt_no_limit():
     assert p._bindings["private:onebot:999"]["prompt"] == long_text
 
     # 注入侧 0=不限制：超长文档全量进系统词
-    from xbdoc_inject import build_system_text
+    from core.inject import build_system_text
     assert build_system_text(["a" * 9000], "PP", 0) == "a" * 9000 + "\n\nPP"
 
 
@@ -350,7 +350,7 @@ def test_fetch_groups_concurrent_and_cached():
 
 def test_config_defaults_complete():
     # 配置唯一来源：CONFIG_DEFAULTS 与 CONFIG_META 必须键集一致，缺项会在设置页/持久化漏项
-    import xbdoc_store as S
+    import core.store as S
 
     assert set(S.CONFIG_DEFAULTS) == set(S.CONFIG_META), "CONFIG_DEFAULTS/CONFIG_META 键集漂移"
     for k, d in S.CONFIG_DEFAULTS.items():
@@ -394,7 +394,7 @@ def test_force_empty_prompt_keeps_persona():
 
 
 def test_platform_key_canonical():
-    import xbdoc_store as S
+    import core.store as S
     C = S.XbdocStoreMixin._canonical_key_str
     split = S.XbdocStoreMixin._split_session_key
     # 新格式透传
@@ -445,7 +445,7 @@ def test_qualify_session_key():
 
 
 def test_export_import_roundtrip():
-    import xbdoc_webapi as W
+    import core.webapi as W
     W.json_response = lambda d: d  # noqa: E731
     W.error_response = lambda msg, status_code=400: {"error": msg, "status": status_code}  # noqa: E731
 
@@ -487,7 +487,7 @@ def test_export_import_roundtrip():
 
 
 def test_platform_object_extraction():
-    import xbdoc_store as S
+    import core.store as S
     pf = S.XbdocStoreMixin._platform_of
     # PlatformMetadata 对象取 .name，绝不 str() 整个对象进 key
     meta = SimpleNamespace(name="aiocqhttp", description="x", id="default")
@@ -513,7 +513,7 @@ def test_platform_object_extraction():
 
 
 def test_insane_keys_dropped_on_load():
-    import xbdoc_store as S
+    import core.store as S
     assert not S.XbdocStoreMixin._is_sane_key(
         "group:PlatformMetadata(name='aiocqhttp', description='x'):123")
     assert S.XbdocStoreMixin._is_sane_key("group:aiocqhttp:123")

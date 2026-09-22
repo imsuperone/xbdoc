@@ -26,14 +26,14 @@ except Exception:
     _HAS_DATA_PATH = False
 
 try:
-    from .xbdoc_retrieval import (
+    from .retrieval import (
         ALLOWED_SUFFIXES,
         chunk_text,
         extract_text_from_bytes,
         tokenize,
     )
 except ImportError:
-    from xbdoc_retrieval import (
+    from retrieval import (
         ALLOWED_SUFFIXES,
         chunk_text,
         extract_text_from_bytes,
@@ -199,7 +199,7 @@ class XbdocStoreMixin:
                 return Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
             except Exception:
                 pass
-        _plug_root = Path(__file__).resolve().parent
+        _plug_root = Path(__file__).resolve().parent.parent
         for cand in [
             _plug_root.parent.parent.parent / "data" / "plugin_data" / PLUGIN_NAME,
             Path.cwd() / "data" / "plugin_data" / PLUGIN_NAME,

@@ -12,9 +12,9 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
 try:
-    from .xbdoc_store import PLUGIN_NAME
+    from .store import PLUGIN_NAME
 except ImportError:
-    from xbdoc_store import PLUGIN_NAME
+    from store import PLUGIN_NAME
 
 
 def mode_label(mode: str) -> str:

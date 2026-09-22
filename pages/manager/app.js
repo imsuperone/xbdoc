@@ -1247,8 +1247,8 @@
               <div class="switch-label-sub">${esc(hint)}</div>
             </div>
             <div class="segmented-choice" data-choice="${esc(k)}">
-              <button class="segmented-choice-btn ${on ? "active" : ""}" data-val="on" type="button">开</button>
               <button class="segmented-choice-btn ${on ? "" : "active"}" data-val="off" type="button">关</button>
+              <button class="segmented-choice-btn ${on ? "active" : ""}" data-val="on" type="button">开</button>
             </div>
           </div>`;
       }

@@ -21,21 +21,21 @@ except Exception:
 
 # 子模块导入：优先包内相对导入，失败时回退到文件目录直载（兼容各类加载器）
 try:
-    from .xbdoc_retrieval import score_chunk_bm25, tokenize
-    from .xbdoc_inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
-    from .xbdoc_store import PLUGIN_NAME, XbdocStoreMixin
-    from .xbdoc_commands import XbdocCommandsMixin
-    from .xbdoc_webapi import XbdocWebAPIMixin
+    from .core.retrieval import score_chunk_bm25, tokenize
+    from .core.inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
+    from .core.store import PLUGIN_NAME, XbdocStoreMixin
+    from .core.commands import XbdocCommandsMixin
+    from .core.webapi import XbdocWebAPIMixin
 except ImportError:
     import sys as _sys
     _plug_dir = str(Path(__file__).resolve().parent)
     if _plug_dir not in _sys.path:
         _sys.path.insert(0, _plug_dir)
-    from xbdoc_retrieval import score_chunk_bm25, tokenize
-    from xbdoc_inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
-    from xbdoc_store import PLUGIN_NAME, XbdocStoreMixin
-    from xbdoc_commands import XbdocCommandsMixin
-    from xbdoc_webapi import XbdocWebAPIMixin
+    from core.retrieval import score_chunk_bm25, tokenize
+    from core.inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
+    from core.store import PLUGIN_NAME, XbdocStoreMixin
+    from core.commands import XbdocCommandsMixin
+    from core.webapi import XbdocWebAPIMixin
 
 
 # ======================================================================

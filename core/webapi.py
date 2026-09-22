@@ -20,9 +20,9 @@ except Exception:
     _HAS_WEB_API = False
 
 try:
-    from .xbdoc_store import PLUGIN_NAME
+    from .store import PLUGIN_NAME
 except ImportError:
-    from xbdoc_store import PLUGIN_NAME
+    from store import PLUGIN_NAME
 
 
 # ======================================================================
