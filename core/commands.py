@@ -89,7 +89,8 @@ class XbdocCommandsMixin:
         sess = self._effective_session(event)
         curr_key = keys[0] if keys else "(未知)"
         shield_txt = shield_label(sess.get("shield"))
-        mode_txt = mode_label(sess.get("mode"))
+        # 模式只在绑定文档后才有意义：无文档时显示"无"，不冒充参考资料模式
+        mode_txt = mode_label(sess.get("mode")) if ids else "➖ 无（未绑定文档）"
         has_prompt = bool(sess.get("prompt"))
         prompt_txt = f"已设置（{len(sess['prompt'])}字）" if has_prompt else "未设置"
         force_sys = bool(sess.get("force_system_prompt"))

@@ -182,6 +182,23 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
         except Exception:
             pass
 
+    def _log_mode_once(self, c_key: str, msg: str) -> None:
+        """模式生效日志：随 perf_log 开关 + 同会话同状态去重，状态不变不重复刷屏。"""
+        try:
+            if not bool(self._cfg("perf_log")):
+                return
+            seen = getattr(self, "_mode_log_seen", None)
+            if not isinstance(seen, dict):
+                seen = self._mode_log_seen = {}
+            if len(seen) > 200:
+                seen.clear()
+            if seen.get(c_key) == msg:
+                return
+            seen[c_key] = msg
+            logger.info(msg)
+        except Exception:
+            pass
+
     @filter.on_llm_request()
     async def _inject_docs(self, event: AstrMessageEvent, req):
         try:
@@ -232,7 +249,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             if not has_bound and custom_prompt:
                 apply_system_prompt(req, custom_prompt, replace=replace_all)
                 self._log_perf(c_key, t0, t_mid, len(custom_prompt), req)
-                logger.info(f"[{PLUGIN_NAME}] [专属系统词模式] 无文档，专属系统提示词独立生效 (会话: {c_key}，{len(custom_prompt)} 字)")
+                self._log_mode_once(c_key, f"[{PLUGIN_NAME}] [专属系统词模式] 无文档，专属系统提示词独立生效 (会话: {c_key}，{len(custom_prompt)} 字)")
                 return
 
             # 无文档且无提示词时的空载响应
@@ -251,7 +268,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
 
                 # 保持 req.prompt 纯净，绝不向用户发言拼入文档正文
                 self._log_perf(c_key, t0, t_mid, len(sys_text), req)
-                logger.info(f"[{PLUGIN_NAME}] [强制遵守模式] 文档已作为系统提示词载入 (会话: {c_key}，{len(sys_text)} 字)")
+                self._log_mode_once(c_key, f"[{PLUGIN_NAME}] [强制遵守模式] 文档已作为系统提示词载入 (会话: {c_key}，{len(sys_text)} 字)")
                 return
 
             # -------------------------------------------------------------
@@ -267,7 +284,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
 
                 # 保持 req.prompt 纯净，绝不向用户发言拼入工作区文件
                 self._log_perf(c_key, t0, t_mid, len(ws_text), req)
-                logger.info(f"[{PLUGIN_NAME}] [工作区模式] 纯净挂载工作区文件 (会话: {c_key}，{len(ws_text)} 字)")
+                self._log_mode_once(c_key, f"[{PLUGIN_NAME}] [工作区模式] 纯净挂载工作区文件 (会话: {c_key}，{len(ws_text)} 字)")
                 return
 
             # -------------------------------------------------------------
@@ -314,7 +331,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 except Exception:
                     pass
 
-            logger.info(f"[{PLUGIN_NAME}] [参考资料模式] 纯净载入文档记忆 (会话: {c_key}，{len(inject)} 字)")
+            self._log_mode_once(c_key, f"[{PLUGIN_NAME}] [参考资料模式] 纯净载入文档记忆 (会话: {c_key}，{len(inject)} 字)")
             self._log_perf(c_key, t0, t_mid, len(inject), req)
         except Exception as e:
             logger.warning(f"[{PLUGIN_NAME}] 上下文注入异常: {e}")
