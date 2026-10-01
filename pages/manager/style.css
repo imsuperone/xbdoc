@@ -1378,6 +1378,17 @@ code.mono {
   }
 }
 
+@media (max-width: 560px) {
+  .category-tabs-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cat-tab {
+    justify-content: center;
+  }
+}
+
 @media (max-width: 640px) {
   body {
     padding: 12px;
