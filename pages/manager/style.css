@@ -1479,6 +1479,15 @@ code.mono {
     text-align: center;
   }
 
+  .segmented-choice:has(> .segmented-choice-btn:nth-child(3)) {
+    border-radius: var(--m3-radius-medium);
+  }
+
+  .segmented-choice:has(> .segmented-choice-btn:nth-child(3)) .segmented-choice-btn {
+    flex-basis: 100%;
+    border-radius: 14px;
+  }
+
   .settings-form .m3-field,
   .settings-form .m3-input {
     max-width: none;

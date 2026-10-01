@@ -1464,6 +1464,33 @@
     });
   }
 
+  function _verCmp(a, b) {
+    const pa = String(a).replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+    const pb = String(b).replace(/^v/i, "").split(".").map((n) => parseInt(n, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d;
+    }
+    return 0;
+  }
+
+  function checkForUpdate() {
+    try {
+      const tag = document.querySelector(".version-tag");
+      if (!tag) return;
+      const local = (tag.textContent || "").trim();
+      fetch("https://raw.githubusercontent.com/imsuperone/xbdoc/main/metadata.yaml", { cache: "no-store" })
+        .then((r) => (r && r.ok ? r.text() : Promise.reject(new Error("bad response"))))
+        .then((t) => {
+          const m = /(?:^|\n)version:\s*([0-9]+(?:\.[0-9]+)*)/.exec(t || "");
+          if (m && _verCmp(m[1], local) > 0) tag.textContent = "检测更新 v" + m[1];
+        })
+        .catch((e) => console.warn("[DocMemory] update check skipped:", e));
+    } catch (e) {
+      console.warn("[DocMemory] update check error:", e);
+    }
+  }
+
   // ---- App Startup Entry ----
   async function startApp() {
     console.log("[DocMemory] Starting Android 16 UI application...");
@@ -1488,6 +1515,7 @@
     initSettings();
     initRefreshButton();
     updatePromptCount();
+    checkForUpdate();
 
     // 2. Connect with bridge if available
     try {
