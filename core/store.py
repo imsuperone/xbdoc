@@ -875,6 +875,8 @@ class XbdocStoreMixin:
             return "workspace"
         if m in ("reference", "ref", "r", "参考", "仅参考", "资料", "0"):
             return "reference"
+        if m in ("none", "n", "无", "不注入", "2"):
+            return "none"
         return ""
 
 

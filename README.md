@@ -4,13 +4,13 @@
 
 -   📦 项目主页：[https://github.com/imsuperone/xbdoc](https://github.com/imsuperone/xbdoc)
 -   🔌 插件 ID：`astrbot_plugin_xbdoc`
--   📌 版本：`v1.2.5`，要求 AstrBot `>=4.16`
+-   📌 版本：`v1.2.6`，要求 AstrBot `>=4.16`
 
 ---
 
 ## 🌟 核心特性
 
--   ⚡ **三大生效模式**：`system` 强制遵守（文档直灌系统提示词） / `workspace` 模拟工作区（`/workspace/` 沙箱挂载） / `reference` 仅作参考资料（提问时按需检索）。
+-   ⚡ **四大生效模式**：`system` 强制遵守（文档直灌系统提示词） / `workspace` 模拟工作区（`/workspace/` 沙箱挂载） / `reference` 仅作参考资料（提问时按需检索） / `none` 无（绑定但不注入）。
 -   🧠 **零 Embedding 检索**：无需向量模型，多语言分词 + BM25（idf + 长度归一），切片词频全缓存，Top-K 注入。
 -   👥 **按群彻底隔离**：会话 Key 归一（`group:` / `private:`），绑定、提示词、屏蔽、模式各群独立。
 -   🏷️ **群专属提示词**：无文档也可独立生效；`shield` 清空原人格、`force` 强制唯一系统词，三模式下恰好生效一次。
@@ -98,7 +98,7 @@
 
 -   私聊独立绑定受 `allow_private_bind` 控制（默认开启），和机器人私聊一句后即可在 WebUI 搜到并绑定。
 -   会话命名空间按 `group:平台:群号` / `private:平台:UID` 划分，跨平台同号群彻底隔离；WebUI 手填短格式（`group:123`）按 seen 自动补平台限定。
--   `/xbdoc mode` 支持 `s / w / r` 快捷（system / workspace / reference），未知模式会明确报错，不再静默回落。
+-   `/xbdoc mode` 支持 `s / w / r / n` 快捷（system / workspace / reference / none 无），未知模式会明确报错，不再静默回落。
 -   `force` 开启但专属提示词为空时不再清空原人格；`shield` 开启仍会清空（符合其语义）。
 -   `/xbdoc forget` 等同于 `/xbdoc no`，同样仅管理员可用。
 -   关闭 `auto_inject` 后不再自动检索文档，但专属提示词与屏蔽依然生效。

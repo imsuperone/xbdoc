@@ -288,6 +288,15 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 return
 
             # -------------------------------------------------------------
+            # 模式 4：🚫 无 (绑定文档但不注入；专属提示词/shield/force 照常生效)
+            # -------------------------------------------------------------
+            if mode == "none" and has_bound:
+                apply_system_prompt(req, custom_prompt, replace=replace_all)
+                self._log_perf(c_key, t0, t_mid, len(custom_prompt), req)
+                self._log_mode_once(c_key, f"[{PLUGIN_NAME}] [无模式] 文档不注入，仅提示词/屏蔽生效 (会话: {c_key})")
+                return
+
+            # -------------------------------------------------------------
             # 模式 2：📖 仅作参考资料 (提示词按 shield/force 决定替换或追加，必生效一次)
             # -------------------------------------------------------------
             apply_system_prompt(req, custom_prompt, replace=replace_all)

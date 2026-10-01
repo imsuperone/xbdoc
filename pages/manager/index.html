@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>文档记忆助手</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.5" />
+  <link rel="stylesheet" href="./style.css?v=1.2.6" />
 </head>
 <body>
   <div class="app-layout">
@@ -12,7 +12,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>文档记忆助手 <span class="version-tag">v1.2.5</span></h1>
+          <h1>文档记忆助手 <span class="version-tag">v1.2.6</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -172,7 +172,8 @@
               <p class="field-hint" id="docModeSub">设置文档在会话中的角色定位与隔离级别</p>
             </div>
             <div class="segmented-choice" id="docModeGroup">
-              <button class="segmented-choice-btn active" data-val="reference" type="button">📖 仅作参考资料</button>
+              <button class="segmented-choice-btn active" data-val="none" type="button">🚫 无（不注入）</button>
+              <button class="segmented-choice-btn" data-val="reference" type="button">📖 仅作参考资料</button>
               <button class="segmented-choice-btn" data-val="system" type="button">⚡ 强制AI遵守</button>
               <button class="segmented-choice-btn" data-val="workspace" type="button">💻 模拟工作区</button>
             </div>
@@ -249,7 +250,7 @@
       <section class="settings-section" data-section="tab-guide">
         <div class="m3-card">
           <h2 class="card-title">📖 聊天指令与快速上手</h2>
-          <p class="card-desc">群聊指令速查、三大生效模式说明与检索原理简介。</p>
+          <p class="card-desc">群聊指令速查、四大生效模式说明与检索原理简介。</p>
 
           <div style="display:flex; flex-direction:column; gap:16px;">
             <div class="binding-card" style="align-items:flex-start;">
@@ -292,11 +293,12 @@
 
             <div class="binding-card" style="align-items:flex-start;">
               <div class="binding-card-meta">
-                <strong style="color:var(--m3-sys-color-primary);">2. 三大生效模式说明</strong>
+                <strong style="color:var(--m3-sys-color-primary);">2. 四大生效模式说明</strong>
                 <p style="margin-top:6px; color:var(--m3-sys-color-on-surface); line-height:1.7;">
                   • <strong>⚡ 强制遵守文档（系统提示词模式）</strong>：将文档核心内容直接作为最高优先级系统提示词载入大模型，专属提示词作为额外提示词追加，强制 AI 无条件遵守并执行文档里的角色设定与规则。<br/>
                   • <strong>💻 模拟工作区模式（项目沙箱）</strong>：将绑定的文件作为工作区沙箱挂载，大模型严格基于工作区内挂载的文件进行专业分析、开发与解答，0其余说教提示词。<br/>
-                  • <strong>📖 仅作参考资料模式（知识库问答）</strong>：文档作为外部知识库，提问相关内容时自动检索切片作为参考资料引用回答。
+                  • <strong>📖 仅作参考资料模式（知识库问答）</strong>：文档作为外部知识库，提问相关内容时自动检索切片作为参考资料引用回答。<br/>
+                  • <strong>🚫 无（不注入）</strong>：绑定的文档保留但完全不注入上下文，仅专属提示词/人格屏蔽等配置生效，适合临时停用文档引用。
                 </p>
               </div>
             </div>
@@ -368,6 +370,6 @@
   </div>
 
   <script src="./api.js" defer></script>
-  <script src="./app.js?v=1.2.5" defer></script>
+  <script src="./app.js?v=1.2.6" defer></script>
 </body>
 </html>

@@ -64,7 +64,7 @@
   let currentReaderChunk = 1;
   let currentReaderTotal = 1;
   let currentShield = "off";
-  let currentDocMode = "reference";
+  let currentDocMode = "none";
   let currentForcePrompt = false;
   let currentBindingFilter = "all";
 
@@ -642,11 +642,11 @@
       promptDirty = false;
       setShieldChoice("off");
       setForceChoice("off");
-      currentDocMode = "reference";
+      currentDocMode = "none";
       const group = $("docModeGroup");
       if (group) {
         group.querySelectorAll(".segmented-choice-btn").forEach((btn) => {
-          btn.classList.toggle("active", btn.dataset.val === "reference");
+          btn.classList.toggle("active", btn.dataset.val === "none");
         });
       }
     }
@@ -734,7 +734,7 @@
     setForceChoice(forceVal);
 
     let modeVal = "reference";
-    if (entry.mode === "system" || entry.mode === "workspace") {
+    if (entry.mode === "system" || entry.mode === "workspace" || entry.mode === "none") {
       modeVal = entry.mode;
     }
     _applyDocMode(modeVal);
@@ -761,10 +761,10 @@
   }
 
   function _applyDocMode(val) {
-    if (val === "system" || val === "workspace") {
+    if (val === "system" || val === "workspace" || val === "reference" || val === "none") {
       currentDocMode = val;
     } else {
-      currentDocMode = "reference";
+      currentDocMode = "none";
     }
     const group = $("docModeGroup");
     if (!group) return;
@@ -834,7 +834,7 @@
         renderDocChips();
         setShieldChoice("off");
         setForceChoice("off");
-        _applyDocMode("reference");
+        _applyDocMode("none");
         showToast("已清空表单输入");
       });
     }
@@ -881,7 +881,7 @@
         }
         const shield = currentShield === "on";
         // 未选文档时模式强制回落（后端同样会强制），避免存下无效模式
-        const mode = ids.length > 0 ? (currentDocMode || "reference") : "reference";
+        const mode = ids.length > 0 ? (currentDocMode || "none") : "reference";
         const forceSys = currentForcePrompt;
 
         try {
@@ -964,7 +964,7 @@
       const shieldClass = isShield ? "shield-badge-on" : "shield-badge-off";
       const shieldTag = isShield ? "🛡️ 屏蔽已开启 (清空原人格)" : "👤 屏蔽已关闭 (保留原人格)";
 
-      const curMode = raw.mode === "system" ? "system" : (raw.mode === "workspace" ? "workspace" : "reference");
+      const curMode = raw.mode === "system" ? "system" : (raw.mode === "workspace" ? "workspace" : (raw.mode === "none" ? "none" : "reference"));
 
       // Session Name display（私聊显示昵称/私聊 UID，不与群混淆）
       const isPrivateSession = raw.kind === "private" || k.startsWith("private:");
@@ -988,6 +988,7 @@
             <div class="mode-select-row">
               <span style="font-size:12px; font-weight:600; color:var(--m3-sys-color-outline); margin-right:4px;">生效模式:</span>
               ${docs.length ? `
+                <button class="mode-btn-pill ${curMode === 'none' ? 'active' : ''}" data-act="set-mode" data-mode="none" data-key="${esc(k)}" type="button">🚫 不注入</button>
                 <button class="mode-btn-pill ${curMode === 'reference' ? 'active' : ''}" data-act="set-mode" data-mode="reference" data-key="${esc(k)}" type="button">📖 仅作参考</button>
                 <button class="mode-btn-pill ${curMode === 'system' ? 'active' : ''}" data-act="set-mode" data-mode="system" data-key="${esc(k)}" type="button">⚡ 强制系统词</button>
                 <button class="mode-btn-pill ${curMode === 'workspace' ? 'active' : ''}" data-act="set-mode" data-mode="workspace" data-key="${esc(k)}" type="button">💻 工作区Agent</button>
@@ -1055,6 +1056,7 @@
           system: "⚡ 已切换为【强制遵守文档（系统提示词）】！",
           workspace: "💻 已切换为【模拟工作区 Agent 模式】！",
           reference: "📖 已切换为【仅作参考资料（记忆库）】！",
+          none: "🚫 已切换为【无（不注入文档）】！",
         };
 
         try {

@@ -24,6 +24,8 @@ def mode_label(mode: str) -> str:
         return "⚡ 强制遵守（系统提示词）"
     if m == "workspace":
         return "💻 模拟工作区"
+    if m == "none":
+        return "🚫 无（不注入文档）"
     return "📖 仅作参考资料"
 
 
@@ -49,7 +51,7 @@ class XbdocCommandsMixin:
             "• /xbdoc bind <ID...> — 追加绑定，自动合并\n"
             "• /xbdoc unbind [ID...] — 解绑，留空全清（含提示词/屏蔽）\n\n"
             "🎛️ 模式（管理员）\n"
-            "• /xbdoc mode system|workspace|reference — 切换生效模式\n"
+            "• /xbdoc mode system|workspace|reference|none — 切换生效模式\n"
             "• /xbdoc shield on|off — 清空/保留原人格\n"
             "• /xbdoc force on|off — 专属提示词唯一生效\n\n"
             "🏷️ 提示词（管理员）\n"
@@ -141,7 +143,7 @@ class XbdocCommandsMixin:
         if not ids:
             yield event.plain_result(
                 f"💻 模拟工作区详情（{key}）\n\n"
-                f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else '📖 普通模式'}\n"
+                f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else ('🚫 无（不注入）' if mode == 'none' else '📖 普通模式')}\n"
                 "⚠️ 当前工作区尚未挂载用户文档。\n"
                 "💡 发送 /xbdoc list 查看可用文档，使用 /xbdoc bind <ID> 挂载文件到工作区。"
             )
@@ -149,7 +151,7 @@ class XbdocCommandsMixin:
 
         lines = [
             f"💻 模拟工作区详情（{key}）\n",
-            f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else '📖 普通模式 (发送 /xbdoc mode workspace 切换为工作区)'}",
+            f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else ('🚫 无（不注入）' if mode == 'none' else '📖 普通模式 (发送 /xbdoc mode workspace 切换为工作区)')}",
             f"• 挂载文件数量：共 {len(ids)} 篇文档\n",
             "📁 工作区根目录 [/workspace] 文件清单：",
         ]
@@ -339,7 +341,7 @@ class XbdocCommandsMixin:
 
 
     async def doc_mode(self, event: AstrMessageEvent, args: List[str]):
-        """设置本群文档生效模式 /xbdoc mode workspace|system|reference（管理员，需先绑定文档）"""
+        """设置本群文档生效模式 /xbdoc mode workspace|system|reference|none（管理员，需先绑定文档）"""
         read_key, ent = self._resolve_session(event, create=False)
         if not [d for d in ent.get("doc_ids", []) if d in self._index]:
             yield event.plain_result(
@@ -354,13 +356,14 @@ class XbdocCommandsMixin:
                 "切换指令：\n"
                 "• /xbdoc mode workspace（模拟工作区，仅限工作区文档）\n"
                 "• /xbdoc mode system（强制遵守文档，角色与指令模式）\n"
-                "• /xbdoc mode reference（仅作参考资料，知识库问答）"
+                "• /xbdoc mode reference（仅作参考资料，知识库问答）\n"
+                "• /xbdoc mode none（无：绑定文档但不注入，仅提示词/屏蔽生效）"
             )
             return
         norm = self._normalize_mode(raw)
         if not norm:
             yield event.plain_result(
-                f"❌ 未知模式「{raw}」，可用：workspace / system / reference（首字母 w / s / r 也可）。"
+                f"❌ 未知模式「{raw}」，可用：workspace / system / reference / none（首字母 w / s / r / n 也可）。"
             )
             return
         with self._save_lock:
@@ -376,6 +379,10 @@ class XbdocCommandsMixin:
             yield event.plain_result(
                 f"⚡ 本群模式已切换为【强制遵守文档】！\n\n"
                 f"文档将直接作为最高优先级系统提示词载入大模型，AI 将严格遵循文档中的一切角色设定、语言规范与指令要求。"
+            )
+        elif norm == "none":
+            yield event.plain_result(
+                f"🚫 本群模式已切换为【无】！绑定文档保留但不再注入，仅专属提示词/屏蔽生效。"
             )
         else:
             yield event.plain_result(

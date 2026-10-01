@@ -244,7 +244,7 @@ class XbdocWebAPIMixin:
             if "mode" in payload:
                 _m = self._normalize_mode(payload.get("mode"))
                 if not _m:
-                    return error_response("未知模式，可用：workspace / system / reference", status_code=400)
+                    return error_response("未知模式，可用：workspace / system / reference / none", status_code=400)
                 ent["mode"] = _m
             if not valid:
                 # 未绑定任何文档时模式强制回落，与聊天指令保持一致
