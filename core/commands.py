@@ -321,7 +321,8 @@ class XbdocCommandsMixin:
         mode = str(sess.get("mode") or "reference")
         preview = (eff_prompt[:260] + "…") if len(eff_prompt) > 260 else eff_prompt
         shield_desc = shield_label(eff_shield)
-        mode_desc = mode_label(mode)
+        # 模式只在绑定文档后才有意义：无文档时显示"无"，与 status 口径一致
+        mode_desc = mode_label(mode) if doc_ids else "➖ 无（未绑定文档）"
 
         yield event.plain_result(
             "🧩 本群配置详情\n\n"
