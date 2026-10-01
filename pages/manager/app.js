@@ -68,7 +68,7 @@
   let currentForcePrompt = false;
   let currentBindingFilter = "all";
 
-  // ---- Theme Handling ----
+  // ---- Theme Handling (xbimg framework pattern, storage key stays doc_memory_theme) ----
   function initTheme() {
     try {
       const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -81,8 +81,20 @@
           const cur = document.documentElement.getAttribute("data-theme") || "light";
           const next = cur === "dark" ? "light" : "dark";
           applyTheme(next);
+          // Re-tint accent variables for the new theme (custom color or theme default)
+          const picker = $("accentPicker");
+          if (picker) {
+            if (picker.dataset.custom) applyAccentColor(picker.value, false);
+            else applyAccentColor("", false);
+          }
+          showToast(`管理台界面已切换为${next === "dark" ? "深色暗黑" : "浅色明亮"}模式`);
         });
       }
+      // Align picker with the current theme default on first paint
+      try {
+        const picker = $("accentPicker");
+        if (picker && !picker.dataset.custom) applyAccentColor("", false);
+      } catch (e) {}
     } catch (e) {
       console.warn("[DocMemory] initTheme failed:", e);
     }
@@ -100,24 +112,121 @@
     }
   }
 
-  // ---- Navigation Tabs ----
+  // ---- Accent Color Engine (ported from xbimg, storage key: xbdoc_accent) ----
+  function mixHex(hexA, hexB, ratio) {
+    const toRgb = (h) => [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16));
+    const a = toRgb(hexA), b = toRgb(hexB);
+    const mixed = a.map((v, i) => Math.round(v * ratio + b[i] * (1 - ratio)));
+    return "#" + mixed.map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+  }
+
+  const _ACCENT_VARS = ["--m3-sys-color-primary", "--m3-sys-color-primary-container", "--m3-sys-color-surface", "--m3-sys-color-surface-container", "--m3-sys-color-surface-container-high", "--m3-sys-color-surface-container-highest", "--m3-seg-ink"];
+
+  function _relLum(hex) {
+    const c = [1, 3, 5].map((i) => {
+      const v = parseInt(hex.substr(i, 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+
+  function _contrastOk(fg, bg) {
+    const l1 = _relLum(fg), l2 = _relLum(bg);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05) >= 3.0;
+  }
+
+  function applyAccentColor(hex, save) {
+    void save;
+    const v = typeof hex === "string" ? hex.trim() : "";
+    const ok = /^#[0-9a-fA-F]{6}$/.test(v);
+    const root = document.documentElement;
+    if (ok) {
+      const dark = (root.getAttribute("data-theme") || "light") === "dark";
+      const tinted = dark ? {
+        "--m3-sys-color-primary": v,
+        "--m3-sys-color-primary-container": mixHex(v, "#1B2C42", 0.45),
+        "--m3-sys-color-surface": mixHex(v, "#111418", 0.12),
+        "--m3-sys-color-surface-container": mixHex(v, "#1A1F26", 0.16),
+        "--m3-sys-color-surface-container-high": mixHex(v, "#232A33", 0.16),
+        "--m3-sys-color-surface-container-highest": mixHex(v, "#2C343F", 0.16),
+      } : {
+        "--m3-sys-color-primary": v,
+        "--m3-sys-color-primary-container": mixHex(v, "#E4EAF2", 0.25),
+        "--m3-sys-color-surface": mixHex(v, "#F4F7FB", 0.08),
+        "--m3-sys-color-surface-container": mixHex(v, "#E8EDF4", 0.12),
+        "--m3-sys-color-surface-container-highest": mixHex(v, "#DFE6EF", 0.12),
+      };
+      for (const k in tinted) {
+        try { root.style.setProperty(k, tinted[k]); } catch (e) {}
+      }
+      try {
+        const segBg = dark ? tinted["--m3-sys-color-surface-container-high"] : "#FFFFFF";
+        root.style.setProperty("--m3-seg-ink", _contrastOk(v, segBg) ? v : (dark ? "#EAE6DF" : "#1E1B16"));
+      } catch (e) {}
+    } else {
+      for (const k of _ACCENT_VARS) {
+        try { root.style.removeProperty(k); } catch (e) {}
+      }
+    }
+    try {
+      if (ok) safeSet("xbdoc_accent", v);
+      else if (window.localStorage) window.localStorage.removeItem("xbdoc_accent");
+    } catch (e) {}
+    const picker = $("accentPicker");
+    if (picker) {
+      if (ok) {
+        picker.value = v;
+        picker.dataset.custom = "1";
+      } else {
+        delete picker.dataset.custom;
+        try {
+          const def = getComputedStyle(document.documentElement).getPropertyValue("--m3-sys-color-primary").trim() || "#4A90D9";
+          picker.value = /^#[0-9a-fA-F]{6}$/.test(def) ? def : "#4A90D9";
+        } catch (e) {}
+      }
+    }
+  }
+
+  function initAccentColor() {
+    let v = "";
+    try { v = safeGet("xbdoc_accent", "") || ""; } catch (e) { v = ""; }
+    applyAccentColor(v, false);
+  }
+
+  function initAccentPicker() {
+    initAccentColor();
+    const picker = $("accentPicker");
+    if (picker) {
+      picker.addEventListener("input", () => applyAccentColor(picker.value, false));
+      picker.addEventListener("change", () => applyAccentColor(picker.value, false));
+      picker.addEventListener("dblclick", () => applyAccentColor("", false));
+    }
+    const resetBtn = $("accentResetBtn");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        applyAccentColor("", false);
+        showToast("已恢复默认主题色");
+      });
+    }
+  }
+
+  // ---- Navigation Tabs (xbimg framework pattern: data-tab <-> data-section) ----
   function initTabs() {
-    const tabs = document.querySelectorAll(".nav-tab");
+    const tabs = document.querySelectorAll(".cat-tab");
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => {
-        tabs.forEach((t) => t.classList.remove("active"));
-        document.querySelectorAll(".tab-pane").forEach((p) => p.classList.remove("active"));
-        tab.classList.add("active");
-        const targetId = tab.dataset.tab;
-        const target = $(targetId);
-        if (target) target.classList.add("active");
+        switchTab(tab.dataset.tab);
       });
     });
   }
 
   function switchTab(tabId) {
-    const btn = document.querySelector(`.nav-tab[data-tab="${tabId}"]`);
-    if (btn) btn.click();
+    document.querySelectorAll(".cat-tab").forEach((t) => {
+      t.classList.toggle("active", t.getAttribute("data-tab") === tabId);
+    });
+    document.querySelectorAll(".settings-section").forEach((p) => {
+      p.classList.toggle("active", p.getAttribute("data-section") === tabId);
+    });
   }
 
   // ---- Stats Counters ----
@@ -454,7 +563,7 @@
               <span>${esc(g.platform ? g.platform + ' · ' : '')}${isPrivate ? "私聊 UID" : "群号"}: ${esc(g.gid)} ${g.msg_count ? ' · ' + esc(g.msg_count) + '条发言' : ''}</span>
             </div>
           </div>
-          ${g.bound ? '<span class="badge-pill" style="background:var(--md-sys-color-primary-container); color:var(--md-sys-color-primary); font-weight:600;">已绑定</span>' : '<span class="badge-pill">选用</span>'}
+          ${g.bound ? '<span class="badge-pill" style="background:var(--m3-sys-color-primary-container); color:var(--m3-sys-color-primary); font-weight:600;">已绑定</span>' : '<span class="badge-pill">选用</span>'}
         </div>
       `;
     }).join("");
@@ -890,10 +999,10 @@
               ${docs.length ? docs.map((d) => `<span class="doc-tag">${esc(d.filename || d.doc_id || d)}</span>`).join("") : '<span class="helper">无绑定文档</span>'}
               ${raw.force_system_prompt ? '<span class="badge-pill" style="background:#fee2e2; color:#991b1b; font-weight:700; border:1px solid #f87171;">⚡ 强制唯一系统词</span>' : ''}
               <span class="badge-pill ${shieldClass}">${esc(shieldTag)}</span>
-              ${prompt ? `<span class="badge-pill" style="background:var(--md-sys-color-tertiary-container); color:var(--md-sys-color-on-tertiary-container);">🏷️ 专属提示词（${prompt.length}字）</span>` : ''}
+              ${prompt ? `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">🏷️ 专属提示词（${prompt.length}字）</span>` : ''}
             </div>
             <div class="mode-select-row">
-              <span style="font-size:12px; font-weight:600; color:var(--md-sys-color-outline); margin-right:4px;">生效模式:</span>
+              <span style="font-size:12px; font-weight:600; color:var(--m3-sys-color-outline); margin-right:4px;">生效模式:</span>
               ${docs.length ? `
                 <button class="mode-btn-pill ${curMode === 'reference' ? 'active' : ''}" data-act="set-mode" data-mode="reference" data-key="${esc(k)}" type="button">📖 仅作参考</button>
                 <button class="mode-btn-pill ${curMode === 'system' ? 'active' : ''}" data-act="set-mode" data-mode="system" data-key="${esc(k)}" type="button">⚡ 强制系统词</button>
@@ -1373,6 +1482,7 @@
 
     // 1. Synchronous UI initialization (never blocks)
     initTheme();
+    initAccentPicker();
     initTabs();
     initDocGridEvents();
     initDocSearch();

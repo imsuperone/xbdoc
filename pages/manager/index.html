@@ -4,30 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>文档记忆助手</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./style.css?v=1.2.4" />
 </head>
 <body>
-  <div class="app-container">
-    <!-- Top System App Bar -->
+  <div class="app-layout">
+    <!-- Top Bar (Android 16 Expressive System Header) -->
     <header class="top-bar">
-      <div class="top-bar-title">
-        <div class="app-icon-badge">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-          </svg>
-        </div>
-        <div class="top-bar-text">
-          <h1>文档记忆助手</h1>
-          <p>零 Embedding 检索 · 按群独立绑定 · 智能上下文注入</p>
+      <div class="top-bar-brand">
+        <div class="brand-text">
+          <h1>文档记忆助手 <span class="version-tag">v1.2.4</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
-        <button id="themeToggleBtn" class="icon-btn" title="切换深浅主题" type="button">
+        <input type="color" id="accentPicker" class="m3-accent-picker" title="调整主题颜色" value="#4A90D9" />
+        <button id="accentResetBtn" class="m3-icon-btn" title="恢复默认主题色" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+          </svg>
+        </button>
+        <button id="themeToggleBtn" class="m3-icon-btn" title="切换深色/浅色主题" type="button">
           <svg id="themeIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
           </svg>
         </button>
-        <button id="refreshAllBtn" class="icon-btn" title="刷新全部数据" type="button">
+        <button id="refreshAllBtn" class="m3-icon-btn" title="刷新全部数据" type="button">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
           </svg>
@@ -60,319 +60,294 @@
       </div>
     </div>
 
-    <!-- Android 16 Segmented Pill Navigation Bar -->
-    <nav class="segmented-nav">
-      <button class="nav-tab active" data-tab="tab-docs" type="button">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-        文档库
+    <!-- Category Navigation Bar -->
+    <nav class="category-tabs-bar">
+      <button type="button" class="cat-tab active" data-tab="tab-docs">
+        <span class="cat-icon">📚</span>
+        <span class="cat-title">文档库</span>
       </button>
-      <button class="nav-tab" data-tab="tab-bindings" type="button">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
-        会话绑定
+      <button type="button" class="cat-tab" data-tab="tab-bindings">
+        <span class="cat-icon">🔗</span>
+        <span class="cat-title">会话绑定</span>
       </button>
-      <button class="nav-tab" data-tab="tab-settings" type="button">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-        插件设置
+      <button type="button" class="cat-tab" data-tab="tab-settings">
+        <span class="cat-icon">⚙️</span>
+        <span class="cat-title">插件设置</span>
       </button>
-      <button class="nav-tab" data-tab="tab-guide" type="button">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
-        使用指南
+      <button type="button" class="cat-tab" data-tab="tab-guide">
+        <span class="cat-icon">📖</span>
+        <span class="cat-title">使用指南</span>
       </button>
     </nav>
 
-    <!-- Tab 1: Documents Management -->
-    <main id="tab-docs" class="tab-pane active">
-      <!-- Drag & Drop Upload Zone -->
-      <section class="m3-card">
-        <input type="file" id="fileInput" accept=".md,.markdown,.txt,.json,.csv,.log,.yaml,.yml,.toml,.ini,.cfg,.pdf,.docx,.html,.htm" style="display:none;" />
-        <label class="dropzone-container" id="dropzone" for="fileInput">
-          <div class="dropzone-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
-            </svg>
-          </div>
-          <div class="dropzone-title">点击选择或将文档拖放到此处</div>
-          <div class="dropzone-sub">单个文件 ≤ 50MB · 支持 md / txt / pdf / docx / json 等文档格式</div>
-          <div class="format-tags">
-            <span class="format-pill">MARKDOWN</span>
-            <span class="format-pill">TXT</span>
-            <span class="format-pill">PDF</span>
-            <span class="format-pill">DOCX</span>
-            <span class="format-pill">JSON</span>
-          </div>
-          <div class="upload-progress-bar" id="uploadProgress">
-            <div class="upload-progress-fill"></div>
-          </div>
-        </label>
-      </section>
+    <!-- Main Workspace (Single Column, Tab-Driven Architecture) -->
+    <main class="main-content-wrap" id="mainWorkspace">
 
-      <!-- Document Library List -->
-      <section class="m3-card">
-        <div class="m3-card-header">
-          <div>
-            <div class="m3-card-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
-              文档资料库
-            </div>
-            <div class="m3-card-desc">已入库切片的文档清单，可直接预览或一键绑定到指定会话。</div>
-          </div>
-        </div>
-
-        <div class="doc-filter-bar">
-          <div class="m3-search-box">
-            <svg class="m3-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-            </svg>
-            <input type="text" id="docSearchInput" class="m3-input" placeholder="按文档名称或 ID 筛选…" />
-          </div>
-        </div>
-
-        <div id="docGrid" class="doc-grid">
-          <!-- Dynamic Document Cards Loaded via app.js -->
-        </div>
-      </section>
-    </main>
-
-    <!-- Tab 2: Bindings & Group Settings -->
-    <main id="tab-bindings" class="tab-pane">
-      <!-- Edit / Create Binding Card -->
-      <section class="m3-card">
-        <div class="m3-card-header">
-          <div>
-            <div class="m3-card-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg>
-              会话绑定与群专属配置
-            </div>
-            <div class="m3-card-desc">将文档分配给特定的群聊，并可独立设定该群专属的 Prompt 附加词及人格屏蔽。</div>
-          </div>
-        </div>
-
-        <!-- Session Key Selector -->
-        <div class="form-group">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <label class="form-label" for="sessionKey" style="margin-bottom:0;">
-              目标会话标识 (Session Key)
-              <span class="helper">支持搜索群名称/群号/私聊昵称，或直接输入 group:123456 / private:UID</span>
-            </label>
-            <button id="fetchBotGroupsBtn" class="m3-btn m3-btn-tonal m3-btn-sm" type="button" title="向机器人适配器主动拉取已加入的群聊">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+      <!-- ==================== Tab 1: 文档库 ==================== -->
+      <section class="settings-section active" data-section="tab-docs">
+        <!-- Drag & Drop Upload Zone -->
+        <div class="m3-card">
+          <input type="file" id="fileInput" accept=".md,.markdown,.txt,.json,.csv,.log,.yaml,.yml,.toml,.ini,.cfg,.pdf,.docx,.html,.htm" style="display:none;" />
+          <label class="dropzone-container" id="dropzone" for="fileInput">
+            <div class="dropzone-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
               </svg>
-              获取机器人所在群
-            </button>
-          </div>
-          <div style="position:relative;">
-            <input type="text" id="sessionKey" class="m3-field" placeholder="点击查看群/私聊列表，或输入群号/昵称/UID 筛选…" autocomplete="off" />
-            <div id="suggestDropdown" class="suggest-dropdown">
-              <!-- Auto-suggest items -->
             </div>
-          </div>
-        </div>
-
-        <!-- Bound Documents Picker -->
-        <div class="form-group">
-          <label class="form-label">
-            选择绑定的文档
-            <span class="helper">点击药丸标签即可快速勾选/取消</span>
+            <div class="dropzone-title">点击选择或将文档拖放到此处</div>
+            <div class="dropzone-sub">单个文件 ≤ 50MB · 支持 md / txt / pdf / docx / json 等文档格式</div>
+            <div class="format-tags">
+              <span class="format-pill">MARKDOWN</span>
+              <span class="format-pill">TXT</span>
+              <span class="format-pill">PDF</span>
+              <span class="format-pill">DOCX</span>
+              <span class="format-pill">JSON</span>
+            </div>
+            <div class="upload-progress-bar" id="uploadProgress">
+              <div class="upload-progress-fill"></div>
+            </div>
           </label>
-          <div id="docChipsPicker" class="doc-chips-grid">
-            <!-- Rendered by app.js -->
-          </div>
         </div>
 
-        <!-- Group Independent Prompt -->
-        <div class="form-group">
-          <label class="form-label" for="bindPrompt">
-            本群专属系统提示词 (Prompt)
-            <span class="helper">选填。设置该群专属的角色设定或系统提示词，即使未绑定文档也可独立生效。</span>
-            <span class="helper" id="promptCharCount"></span>
-          </label>
-          <textarea id="bindPrompt" class="m3-field" rows="6" placeholder="例如：你现在是本群的专属助理，说话风格幽默严谨，必须严格遵循本指令…"></textarea>
-        </div>
+        <!-- Document Library List -->
+        <div class="m3-card">
+          <h2 class="card-title">📚 文档资料库</h2>
+          <p class="card-desc">已入库切片的文档清单，可直接预览或一键绑定到指定会话。</p>
 
-        <!-- Force System Prompt Switch -->
-        <div class="m3-switch-row" id="forceSwitchRow" style="margin-bottom:14px;">
-          <div>
-            <div class="switch-label-title">强制注入系统提示词</div>
-            <div class="switch-label-sub">清空其他提示词，强制专属提示词作为底层唯一系统提示词</div>
+          <div class="form-group">
+            <div class="m3-search-box">
+              <svg class="m3-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+              </svg>
+              <input type="text" id="docSearchInput" class="m3-input" placeholder="按文档名称或 ID 筛选…" />
+            </div>
           </div>
-          <div class="segmented-choice" id="forceChoiceGroup">
-            <button class="segmented-choice-btn active" data-val="off" type="button">关闭</button>
-            <button class="segmented-choice-btn" data-val="on" type="button">开启 (唯一系统词)</button>
-          </div>
-        </div>
 
-        <!-- Document Execution Mode Switch -->
-        <div class="m3-switch-row" id="docModeRow" style="margin-bottom:14px;">
-          <div>
-            <div class="switch-label-title">文档生效模式</div>
-            <div class="switch-label-sub" id="docModeSub">设置文档在会话中的角色定位与隔离级别</div>
+          <div id="docGrid" class="doc-grid">
+            <!-- Dynamic Document Cards Loaded via app.js -->
           </div>
-          <div class="segmented-choice" id="docModeGroup">
-            <button class="segmented-choice-btn active" data-val="reference" type="button">📖 仅作参考资料</button>
-            <button class="segmented-choice-btn" data-val="system" type="button">⚡ 强制AI遵守</button>
-            <button class="segmented-choice-btn" data-val="workspace" type="button">💻 模拟工作区</button>
-          </div>
-        </div>
-
-        <!-- Persona Shielding Toggle Switch -->
-        <div class="m3-switch-row">
-          <div>
-            <div class="switch-label-title">本群屏蔽 AstrBot 人格</div>
-            <div class="switch-label-sub">开启后彻底清空系统默认人格，只使用本群设置的文档或提示词</div>
-          </div>
-          <div class="segmented-choice" id="shieldChoiceGroup">
-            <button class="segmented-choice-btn active" data-val="off" type="button">关闭 (保留原人格)</button>
-            <button class="segmented-choice-btn" data-val="on" type="button">开启 (清空原人格)</button>
-          </div>
-        </div>
-
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
-          <button id="resetBindFormBtn" class="m3-btn m3-btn-outlined" type="button">清空输入</button>
-          <button id="saveBindBtn" class="m3-btn m3-btn-filled" type="button">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6z"/></svg>
-            保存绑定与配置
-          </button>
         </div>
       </section>
 
-      <!-- Active Bindings List -->
-      <section class="m3-card">
-        <div class="m3-card-header">
-          <div>
-            <div class="m3-card-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-              已配置生效的会话
+      <!-- ==================== Tab 2: 会话绑定 ==================== -->
+      <section class="settings-section" data-section="tab-bindings">
+        <!-- Edit / Create Binding Card -->
+        <div class="m3-card">
+          <h2 class="card-title">🔗 会话绑定与群专属配置</h2>
+          <p class="card-desc">将文档分配给特定的群聊，并可独立设定该群专属的 Prompt 附加词及人格屏蔽。</p>
+
+          <!-- Session Key Selector -->
+          <div class="form-group">
+            <div class="card-row-split" style="margin-bottom:8px;">
+              <label class="form-label" for="sessionKey" style="margin-bottom:0;">
+                目标会话标识 (Session Key)
+              </label>
+              <button id="fetchBotGroupsBtn" class="m3-btn secondary-btn" type="button" title="向机器人适配器主动拉取已加入的群聊" style="padding:4px 12px; font-size:12px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                </svg>
+                获取机器人所在群
+              </button>
             </div>
-            <div class="m3-card-desc">以群名称为主标识，自动规范唯一会话，可清晰查看每个群的屏蔽开启状态。</div>
-            <div style="display:flex; gap:8px; margin-top:10px;">
-              <button id="exportBackupBtn" class="m3-btn m3-btn-outlined m3-btn-sm" type="button">导出备份</button>
-              <button id="importBackupBtn" class="m3-btn m3-btn-outlined m3-btn-sm" type="button">导入恢复</button>
-              <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none;" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Shield Persona Status Filter Chips -->
-        <div class="shield-filter-group" id="shieldFilterGroup">
-          <button class="shield-filter-chip active" data-filter="all" type="button">全部会话 (<span id="countAll">0</span>)</button>
-          <button class="shield-filter-chip" data-filter="shield_on" type="button">🛡️ 屏蔽已开启 (<span id="countShieldOn">0</span>)</button>
-          <button class="shield-filter-chip" data-filter="shield_off" type="button">👤 屏蔽已关闭 (<span id="countShieldOff">0</span>)</button>
-        </div>
-
-        <div id="bindingList" class="binding-cards-list">
-          <!-- Rendered by app.js -->
-        </div>
-      </section>
-    </main>
-
-    <!-- Tab 4: Plugin Settings -->
-    <main id="tab-settings" class="tab-pane">
-      <section class="m3-card">
-        <div class="m3-card-header">
-          <div>
-            <div class="m3-card-title">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-              插件设置
-            </div>
-            <div class="m3-card-desc">原 AstrBot 插件配置项已迁移到本页，修改后即时生效并持久化到数据目录。</div>
-          </div>
-        </div>
-
-        <div id="settingsForm" class="settings-form">
-          <!-- 渲染于 app.js -->
-        </div>
-
-        <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:14px;">
-          <button id="resetSettingsBtn" class="m3-btn m3-btn-outlined" type="button">恢复默认</button>
-          <button id="saveSettingsBtn" class="m3-btn m3-btn-filled" type="button">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6z"/></svg>
-            保存设置
-          </button>
-        </div>
-      </section>
-    </main>
-
-    <!-- Tab 3: Usage Guide -->
-    <main id="tab-guide" class="tab-pane">
-      <section class="m3-card">
-        <div class="m3-card-header">
-          <div class="m3-card-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.75z"/></svg>
-            聊天指令与快速上手
-          </div>
-        </div>
-
-        <div style="display:flex; flex-direction:column; gap:16px;">
-          <div class="binding-card" style="align-items:flex-start;">
-            <div class="binding-card-meta">
-              <strong style="color:var(--md-sys-color-primary);">1. 群聊指令（仅群管理员可改配置）</strong>
-              <div style="margin-top:10px; display:flex; flex-direction:column; gap:14px;">
-                <div class="cmd-group">
-                  <div class="cmd-group-title">📖 查看</div>
-                  <div class="cmd-row"><code class="mono">/xbdoc status</code><span>本群绑定、模式、屏蔽、提示词状态</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc list</code><span>知识库全部文档与 ID</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc workspace</code><span>工作区挂载清单与容量</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc search &lt;词&gt;</code><span>检索本群绑定文档</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc read &lt;ID&gt; [n]</code><span>预览文档指定切片</span></div>
-                </div>
-                <div class="cmd-group">
-                  <div class="cmd-group-title">🔗 绑定</div>
-                  <div class="cmd-row"><code class="mono">/xbdoc bind &lt;ID...&gt;</code><span>追加绑定，自动合并（私聊里直接对自己用即可）</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc unbind [ID...]</code><span>解绑；留空全清，提示词一并清除</span></div>
-                  <div class="cmd-row"><code class="mono">私聊绑定</code><span>和机器人私聊任意一句即被记录，WebUI 搜昵称/UID 绑定，或手填 private:UID</span></div>
-                </div>
-                <div class="cmd-group">
-                  <div class="cmd-group-title">🎛️ 模式（需先绑定文档）</div>
-                  <div class="cmd-row"><code class="mono">/xbdoc mode s|w|r</code><span>强制遵守 / 工作区 / 仅参考</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc shield on|off</code><span>清空 / 保留原人格</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc force on|off</code><span>专属提示词唯一生效</span></div>
-                </div>
-                <div class="cmd-group">
-                  <div class="cmd-group-title">🏷️ 提示词</div>
-                  <div class="cmd-row"><code class="mono">/xbdoc prompt</code><span>查看本群配置详情</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc prompt_set &lt;内容&gt;</code><span>设置专属提示词</span></div>
-                  <div class="cmd-row"><code class="mono">/xbdoc prompt_clear</code><span>清除专属提示词</span></div>
-                </div>
-                <div class="cmd-group">
-                  <div class="cmd-group-title">🧹 历史</div>
-                  <div class="cmd-row"><code class="mono">/xbdoc no [off]</code><span>忘掉此前消息 / 恢复读取</span></div>
-                </div>
+            <span class="field-hint" style="margin-bottom:8px;">支持搜索群名称/群号/私聊昵称，或直接输入 group:123456 / private:UID</span>
+            <div style="position:relative;">
+              <input type="text" id="sessionKey" class="m3-input" placeholder="点击查看群/私聊列表，或输入群号/昵称/UID 筛选…" autocomplete="off" />
+              <div id="suggestDropdown" class="suggest-dropdown">
+                <!-- Auto-suggest items -->
               </div>
             </div>
           </div>
 
-          <div class="binding-card" style="align-items:flex-start;">
-            <div class="binding-card-meta">
-              <strong style="color:var(--md-sys-color-primary);">2. 三大生效模式说明</strong>
-              <p style="margin-top:6px; color:var(--md-sys-color-on-surface); line-height:1.7;">
-                • <strong>⚡ 强制遵守文档（系统提示词模式）</strong>：将文档核心内容直接作为最高优先级系统提示词载入大模型，专属提示词作为额外提示词追加，强制 AI 无条件遵守并执行文档里的角色设定与规则。<br/>
-                • <strong>💻 模拟工作区模式（项目沙箱）</strong>：将绑定的文件作为工作区沙箱挂载，大模型严格基于工作区内挂载的文件进行专业分析、开发与解答，0其余说教提示词。<br/>
-                • <strong>📖 仅作参考资料模式（知识库问答）</strong>：文档作为外部知识库，提问相关内容时自动检索切片作为参考资料引用回答。
-              </p>
+          <!-- Bound Documents Picker -->
+          <div class="form-group">
+            <label class="form-label">
+              选择绑定的文档
+            </label>
+            <span class="field-hint" style="margin-bottom:8px;">点击药丸标签即可快速勾选/取消</span>
+            <div id="docChipsPicker" class="doc-chips-grid">
+              <!-- Rendered by app.js -->
             </div>
           </div>
 
-          <div class="binding-card" style="align-items:flex-start;">
-            <div class="binding-card-meta">
-              <strong style="color:var(--md-sys-color-primary);">3. 零 Embedding 检索原理与 Token 节省</strong>
-              <p style="margin-top:6px; color:var(--md-sys-color-on-surface); line-height:1.7;">
-                本插件无需额外配置向量模型（Embedding），通过中英文分词与 TF 动态加权机制进行快速精准定位，自动提取 Top-K 切片注入大模型上下文，极大降低 Token 消耗并保持极速响应。
-              </p>
+          <!-- Group Independent Prompt -->
+          <div class="form-group">
+            <label class="form-label" for="bindPrompt">
+              本群专属系统提示词 (Prompt)
+            </label>
+            <span class="field-hint" style="margin-bottom:8px;">选填。设置该群专属的角色设定或系统提示词，即使未绑定文档也可独立生效。<span id="promptCharCount"></span></span>
+            <textarea id="bindPrompt" class="m3-textarea" rows="6" placeholder="例如：你现在是本群的专属助理，说话风格幽默严谨，必须严格遵循本指令…"></textarea>
+          </div>
+
+          <!-- Force System Prompt Switch -->
+          <div class="form-group card-row-split" id="forceSwitchRow">
+            <div>
+              <label class="form-label" style="margin: 0;">强制注入系统提示词</label>
+              <p class="field-hint">清空其他提示词，强制专属提示词作为底层唯一系统提示词</p>
+            </div>
+            <div class="segmented-choice" id="forceChoiceGroup">
+              <button class="segmented-choice-btn active" data-val="off" type="button">关闭</button>
+              <button class="segmented-choice-btn" data-val="on" type="button">开启 (唯一系统词)</button>
             </div>
           </div>
 
-          <div class="binding-card" style="align-items:flex-start;">
-            <div class="binding-card-meta">
-              <strong style="color:var(--md-sys-color-primary);">4. 插件信息与开源项目</strong>
-              <p style="margin-top:6px; color:var(--md-sys-color-on-surface); line-height:1.7;">
-                • <strong>作者</strong>：Light<br/>
-                • <strong>开源仓库</strong>：<a href="https://github.com/imsuperone/xbdoc" target="_blank" style="color:var(--md-sys-color-primary); text-decoration:underline; font-weight:600;">https://github.com/imsuperone/xbdoc</a>
-              </p>
+          <!-- Document Execution Mode Switch -->
+          <div class="form-group card-row-split" id="docModeRow">
+            <div>
+              <label class="form-label" style="margin: 0;">文档生效模式</label>
+              <p class="field-hint" id="docModeSub">设置文档在会话中的角色定位与隔离级别</p>
+            </div>
+            <div class="segmented-choice" id="docModeGroup">
+              <button class="segmented-choice-btn active" data-val="reference" type="button">📖 仅作参考资料</button>
+              <button class="segmented-choice-btn" data-val="system" type="button">⚡ 强制AI遵守</button>
+              <button class="segmented-choice-btn" data-val="workspace" type="button">💻 模拟工作区</button>
+            </div>
+          </div>
+
+          <!-- Persona Shielding Toggle Switch -->
+          <div class="form-group card-row-split">
+            <div>
+              <label class="form-label" style="margin: 0;">本群屏蔽 AstrBot 人格</label>
+              <p class="field-hint">开启后彻底清空系统默认人格，只使用本群设置的文档或提示词</p>
+            </div>
+            <div class="segmented-choice" id="shieldChoiceGroup">
+              <button class="segmented-choice-btn active" data-val="off" type="button">关闭 (保留原人格)</button>
+              <button class="segmented-choice-btn" data-val="on" type="button">开启 (清空原人格)</button>
+            </div>
+          </div>
+
+          <div class="card-header-actions" style="justify-content:flex-end; margin-bottom:0;">
+            <button id="resetBindFormBtn" class="m3-btn secondary-btn" type="button">清空输入</button>
+            <button id="saveBindBtn" class="m3-btn primary-btn" type="button">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6z"/></svg>
+              保存绑定与配置
+            </button>
+          </div>
+        </div>
+
+        <!-- Active Bindings List -->
+        <div class="m3-card">
+          <h2 class="card-title">📋 已配置生效的会话</h2>
+          <p class="card-desc">以群名称为主标识，自动规范唯一会话，可清晰查看每个群的屏蔽开启状态。</p>
+
+          <div class="form-group">
+            <div class="chips-row">
+              <button id="exportBackupBtn" class="m3-btn secondary-btn" type="button" style="padding:6px 14px; font-size:12px;">导出备份</button>
+              <button id="importBackupBtn" class="m3-btn secondary-btn" type="button" style="padding:6px 14px; font-size:12px;">导入恢复</button>
+              <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none;" />
+            </div>
+          </div>
+
+          <!-- Shield Persona Status Filter Chips -->
+          <div class="shield-filter-group" id="shieldFilterGroup">
+            <button class="shield-filter-chip active" data-filter="all" type="button">全部会话 (<span id="countAll">0</span>)</button>
+            <button class="shield-filter-chip" data-filter="shield_on" type="button">🛡️ 屏蔽已开启 (<span id="countShieldOn">0</span>)</button>
+            <button class="shield-filter-chip" data-filter="shield_off" type="button">👤 屏蔽已关闭 (<span id="countShieldOff">0</span>)</button>
+          </div>
+
+          <div id="bindingList" class="binding-cards-list">
+            <!-- Rendered by app.js -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Tab 3: 插件设置 ==================== -->
+      <section class="settings-section" data-section="tab-settings">
+        <div class="m3-card">
+          <h2 class="card-title">⚙️ 插件设置</h2>
+          <p class="card-desc">原 AstrBot 插件配置项已迁移到本页，修改后即时生效并持久化到数据目录。</p>
+
+          <div id="settingsForm" class="settings-form">
+            <!-- 渲染于 app.js -->
+          </div>
+
+          <div class="card-header-actions" style="justify-content:flex-end; margin-bottom:0; margin-top:14px;">
+            <button id="resetSettingsBtn" class="m3-btn secondary-btn" type="button">恢复默认</button>
+            <button id="saveSettingsBtn" class="m3-btn primary-btn" type="button">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6z"/></svg>
+              保存设置
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Tab 4: 使用指南 ==================== -->
+      <section class="settings-section" data-section="tab-guide">
+        <div class="m3-card">
+          <h2 class="card-title">📖 聊天指令与快速上手</h2>
+          <p class="card-desc">群聊指令速查、三大生效模式说明与检索原理简介。</p>
+
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div class="binding-card" style="align-items:flex-start;">
+              <div class="binding-card-meta">
+                <strong style="color:var(--m3-sys-color-primary);">1. 群聊指令（仅群管理员可改配置）</strong>
+                <div style="margin-top:10px; display:flex; flex-direction:column; gap:14px;">
+                  <div class="cmd-group">
+                    <div class="cmd-group-title">📖 查看</div>
+                    <div class="cmd-row"><code class="mono">/xbdoc status</code><span>本群绑定、模式、屏蔽、提示词状态</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc list</code><span>知识库全部文档与 ID</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc workspace</code><span>工作区挂载清单与容量</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc search &lt;词&gt;</code><span>检索本群绑定文档</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc read &lt;ID&gt; [n]</code><span>预览文档指定切片</span></div>
+                  </div>
+                  <div class="cmd-group">
+                    <div class="cmd-group-title">🔗 绑定</div>
+                    <div class="cmd-row"><code class="mono">/xbdoc bind &lt;ID...&gt;</code><span>追加绑定，自动合并（私聊里直接对自己用即可）</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc unbind [ID...]</code><span>解绑；留空全清，提示词一并清除</span></div>
+                    <div class="cmd-row"><code class="mono">私聊绑定</code><span>和机器人私聊任意一句即被记录，WebUI 搜昵称/UID 绑定，或手填 private:UID</span></div>
+                  </div>
+                  <div class="cmd-group">
+                    <div class="cmd-group-title">🎛️ 模式（需先绑定文档）</div>
+                    <div class="cmd-row"><code class="mono">/xbdoc mode s|w|r</code><span>强制遵守 / 工作区 / 仅参考</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc shield on|off</code><span>清空 / 保留原人格</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc force on|off</code><span>专属提示词唯一生效</span></div>
+                  </div>
+                  <div class="cmd-group">
+                    <div class="cmd-group-title">🏷️ 提示词</div>
+                    <div class="cmd-row"><code class="mono">/xbdoc prompt</code><span>查看本群配置详情</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc prompt_set &lt;内容&gt;</code><span>设置专属提示词</span></div>
+                    <div class="cmd-row"><code class="mono">/xbdoc prompt_clear</code><span>清除专属提示词</span></div>
+                  </div>
+                  <div class="cmd-group">
+                    <div class="cmd-group-title">🧹 历史</div>
+                    <div class="cmd-row"><code class="mono">/xbdoc no [off]</code><span>忘掉此前消息 / 恢复读取</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="binding-card" style="align-items:flex-start;">
+              <div class="binding-card-meta">
+                <strong style="color:var(--m3-sys-color-primary);">2. 三大生效模式说明</strong>
+                <p style="margin-top:6px; color:var(--m3-sys-color-on-surface); line-height:1.7;">
+                  • <strong>⚡ 强制遵守文档（系统提示词模式）</strong>：将文档核心内容直接作为最高优先级系统提示词载入大模型，专属提示词作为额外提示词追加，强制 AI 无条件遵守并执行文档里的角色设定与规则。<br/>
+                  • <strong>💻 模拟工作区模式（项目沙箱）</strong>：将绑定的文件作为工作区沙箱挂载，大模型严格基于工作区内挂载的文件进行专业分析、开发与解答，0其余说教提示词。<br/>
+                  • <strong>📖 仅作参考资料模式（知识库问答）</strong>：文档作为外部知识库，提问相关内容时自动检索切片作为参考资料引用回答。
+                </p>
+              </div>
+            </div>
+
+            <div class="binding-card" style="align-items:flex-start;">
+              <div class="binding-card-meta">
+                <strong style="color:var(--m3-sys-color-primary);">3. 零 Embedding 检索原理与 Token 节省</strong>
+                <p style="margin-top:6px; color:var(--m3-sys-color-on-surface); line-height:1.7;">
+                  本插件无需额外配置向量模型（Embedding），通过中英文分词与 TF 动态加权机制进行快速精准定位，自动提取 Top-K 切片注入大模型上下文，极大降低 Token 消耗并保持极速响应。
+                </p>
+              </div>
+            </div>
+
+            <div class="binding-card" style="align-items:flex-start;">
+              <div class="binding-card-meta">
+                <strong style="color:var(--m3-sys-color-primary);">4. 插件信息与开源项目</strong>
+                <p style="margin-top:6px; color:var(--m3-sys-color-on-surface); line-height:1.7;">
+                  • <strong>作者</strong>：Light<br/>
+                  • <strong>开源仓库</strong>：<a href="https://github.com/imsuperone/xbdoc" target="_blank" style="color:var(--m3-sys-color-primary); text-decoration:underline; font-weight:600;">https://github.com/imsuperone/xbdoc</a>
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </section>
+
     </main>
 
     <!-- Bottom Sheet / Modal Reader (Android 16 Style) -->
@@ -382,9 +357,9 @@
         <div class="bottom-sheet-header">
           <div>
             <div class="bottom-sheet-title" id="readerTitle">文档预览</div>
-            <div class="m3-card-desc" id="readerSub">片段读取中…</div>
+            <div class="card-desc" id="readerSub" style="margin-bottom:0;">片段读取中…</div>
           </div>
-          <button id="closeReaderBtn" class="icon-btn" type="button">
+          <button id="closeReaderBtn" class="m3-icon-btn" type="button">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
             </svg>
@@ -396,17 +371,20 @@
         </div>
 
         <div class="bottom-sheet-footer">
-          <div style="display:flex; gap:8px;">
-            <button id="prevChunkBtn" class="m3-btn m3-btn-outlined m3-btn-sm" type="button">◀ 上一片段</button>
-            <button id="nextChunkBtn" class="m3-btn m3-btn-outlined m3-btn-sm" type="button">下一片段 ▶</button>
+          <div class="chips-row">
+            <button id="prevChunkBtn" class="m3-btn secondary-btn" type="button" style="padding:6px 14px; font-size:12px;">◀ 上一片段</button>
+            <button id="nextChunkBtn" class="m3-btn secondary-btn" type="button" style="padding:6px 14px; font-size:12px;">下一片段 ▶</button>
           </div>
-          <div style="display:flex; gap:8px;">
-            <button id="copyChunkBtn" class="m3-btn m3-btn-tonal m3-btn-sm" type="button">复制文本</button>
-            <button id="bindFromReaderBtn" class="m3-btn m3-btn-filled m3-btn-sm" type="button">填入绑定</button>
+          <div class="chips-row">
+            <button id="copyChunkBtn" class="m3-btn secondary-btn" type="button" style="padding:6px 14px; font-size:12px;">复制文本</button>
+            <button id="bindFromReaderBtn" class="m3-btn primary-btn" type="button" style="padding:6px 14px; font-size:12px;">填入绑定</button>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container"></div>
 
     <!-- Floating Snackbar / Pill Toast -->
     <div id="snackbar" class="m3-snackbar">
@@ -415,6 +393,6 @@
   </div>
 
   <script src="./api.js" defer></script>
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=1.2.4" defer></script>
 </body>
 </html>
