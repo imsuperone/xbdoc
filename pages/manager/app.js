@@ -140,11 +140,13 @@
       const res = await api.get("docs");
       docsList = res.docs || res.data?.docs || [];
       renderDocs(docsList);
+      for (const id of Array.from(selectedDocIds)) {
+        if (!docsList.some((d) => d.doc_id === id)) selectedDocIds.delete(id);
+      }
       renderDocChips();
       updateStats();
     } catch (e) {
       console.error("[DocMemory] loadDocs error:", e);
-      renderDocs([]);
       showToast("获取文档失败: " + e.message);
     }
   }
@@ -158,7 +160,6 @@
       updateStats();
     } catch (e) {
       console.error("[DocMemory] loadBindings error:", e);
-      renderBindings();
       showToast("获取绑定失败: " + e.message);
     }
   }
@@ -390,7 +391,6 @@
         modeRow.querySelectorAll("button").forEach((b) => b.disabled = false);
         if (modeSub) modeSub.textContent = "设置文档在会话中的角色定位与隔离级别";
       } else {
-        _applyDocMode("reference");
         modeRow.classList.add("disabled");
         modeRow.querySelectorAll("button").forEach((b) => b.disabled = true);
         if (modeSub) modeSub.textContent = "请先在上方选择要绑定的文档";
@@ -451,7 +451,7 @@
             <div class="suggest-avatar">${esc(firstLetter)}</div>
             <div class="suggest-info">
               <strong>${esc(g.group_name || ((isPrivate ? "私聊 " : "群聊 ") + g.gid))}</strong>
-              <span>${esc(g.platform ? g.platform + ' · ' : '')}${isPrivate ? "私聊 UID" : "群号"}: ${esc(g.gid)} ${g.msg_count ? ' · ' + g.msg_count + '条发言' : ''}</span>
+              <span>${esc(g.platform ? g.platform + ' · ' : '')}${isPrivate ? "私聊 UID" : "群号"}: ${esc(g.gid)} ${g.msg_count ? ' · ' + esc(g.msg_count) + '条发言' : ''}</span>
             </div>
           </div>
           ${g.bound ? '<span class="badge-pill" style="background:var(--md-sys-color-primary-container); color:var(--md-sys-color-primary); font-weight:600;">已绑定</span>' : '<span class="badge-pill">选用</span>'}
@@ -520,6 +520,9 @@
       const key = card.dataset.key;
       input.value = key;
       box.classList.remove("open");
+      resetSessionControls();
+      selectedDocIds.clear();
+      renderDocChips();
       loadExistingSessionSettings(key);
     });
 
@@ -746,6 +749,7 @@
     const saveBtn = $("saveBindBtn");
     if (saveBtn) {
       saveBtn.addEventListener("click", async () => {
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         const input = $("sessionKey");
         let key = input ? input.value.trim() : "";
         if (!key) {
@@ -757,8 +761,11 @@
         if (/^\d{5,}$/.test(key)) {
           // 纯数字：已有绑定按后缀精确认领（含限定 key），都没有默认按群号；后端还会按 seen 再补限定
           const tailEq = (k) => String(k || "").split(":").pop() === key;
-          const hit = Object.keys(bindingsMap).find((k) =>
-            (k.startsWith("private:") || k.startsWith("group:")) && tailEq(k));
+          const privHit = Object.keys(bindingsMap).find((k) =>
+            k.startsWith("private:") && tailEq(k));
+          const grpHit = Object.keys(bindingsMap).find((k) =>
+            k.startsWith("group:") && tailEq(k));
+          const hit = grpHit || privHit;
           if (hit) {
             key = hit;
           } else {
@@ -775,7 +782,9 @@
         if (promptDirty || !bindingsMap[key]) {
           prompt = promptEl ? promptEl.value.trim() : "";
         } else {
-          prompt = bindingsMap[key].prompt || "";
+          const curText = promptEl ? promptEl.value.trim() : "";
+          const storedText = (bindingsMap[key].prompt || "").trim();
+          prompt = curText !== storedText ? curText : storedText;
         }
         const shield = currentShield === "on";
         // 未选文档时模式强制回落（后端同样会强制），避免存下无效模式

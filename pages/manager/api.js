@@ -207,7 +207,11 @@
       }
 
       const qs = new URLSearchParams(params).toString();
-      const pfx = _detectedPrefix || `/${PLUGIN_ID}/`;
+      // 已探测前缀优先，其次走标准 POST 前缀表（与 upload 共用，不再各写一份）
+      const prefixes = _detectedPrefix
+        ? [_detectedPrefix, ...POST_PREFIXES]
+        : POST_PREFIXES;
+      const pfx = prefixes[0];
       const url = `${pfx}${endpoint}${qs ? "?" + qs : ""}`;
 
       const link = document.createElement("a");

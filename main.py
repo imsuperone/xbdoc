@@ -292,9 +292,6 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             # -------------------------------------------------------------
             apply_system_prompt(req, custom_prompt, replace=replace_all)
 
-            if not has_bound:
-                return
-
             # auto_inject 关闭时不再自动检索文档（专属提示词/屏蔽仍生效）
             if not bool(self._cfg("auto_inject")):
                 return

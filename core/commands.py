@@ -407,6 +407,8 @@ class XbdocCommandsMixin:
             key, ent = self._resolve_session(event, create=False)
             if not ent:
                 msg = f"⚠️ 本群（{key}）当前未设置专属提示词。"
+            elif not ent.get("prompt"):
+                msg = f"✅ 已清空本群（{key}）专属提示词。"
             else:
                 ent["prompt"] = ""
                 self._prune_empty_entry(key)
@@ -437,6 +439,11 @@ class XbdocCommandsMixin:
             target = self._parse_on_off(raw, cur_shield)
             if target is None:
                 msg = "❌ 用法错误：/xbdoc shield on（开启） | off（关闭）"
+            elif bool(target) == cur_shield:
+                if target:
+                    msg = f"🛡️ 本群已开启人格屏蔽！已彻底清空 AstrBot 自带人格，进入纯文档/提示词模式。"
+                else:
+                    msg = f"👤 本群已关闭人格屏蔽！已恢复 AstrBot 原有人格。"
             else:
                 ent = self._get_entry(key)
                 ent["shield"] = bool(target)
@@ -458,6 +465,11 @@ class XbdocCommandsMixin:
             target = self._parse_on_off(raw, cur)
             if target is None:
                 msg = "用法：/xbdoc force on (开启强制注入) | off (关闭)"
+            elif bool(target) == cur:
+                if target:
+                    msg = f"⚡【强制注入系统提示词已开启】\n会话（{key}）：将清空其他一切提示词，强制本群专属提示词为唯一底层系统提示词。"
+                else:
+                    msg = f"✅【强制注入系统提示词已关闭】\n会话（{key}）：已恢复正常模式。"
             else:
                 ent = self._get_entry(key)
                 ent["force_system_prompt"] = bool(target)

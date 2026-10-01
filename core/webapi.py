@@ -145,6 +145,8 @@ class XbdocWebAPIMixin:
 
     async def _api_delete_doc(self):
         payload = await request.json(default={})
+        if not isinstance(payload, dict):
+            return error_response("请求格式错误", status_code=400)
         doc_id = str(payload.get("doc_id", "")).strip()
         if not doc_id:
             return error_response("缺少 doc_id", status_code=400)
@@ -240,7 +242,10 @@ class XbdocWebAPIMixin:
             if "force_system_prompt" in payload:
                 ent["force_system_prompt"] = bool(payload.get("force_system_prompt"))
             if "mode" in payload:
-                ent["mode"] = self._normalize_mode(payload.get("mode")) or "reference"
+                _m = self._normalize_mode(payload.get("mode"))
+                if not _m:
+                    return error_response("未知模式，可用：workspace / system / reference", status_code=400)
+                ent["mode"] = _m
             if not valid:
                 # 未绑定任何文档时模式强制回落，与聊天指令保持一致
                 ent["mode"] = "reference"

@@ -151,9 +151,20 @@ class XbdocStoreMixin:
                     pass
         except Exception:
             pass
+        try:
+            for _tmp in self.docs_dir.glob("*.tmp"):
+                try:
+                    _tmp.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         # 加载并自动标准化数据（有变才回写，避免每次启动空转 I/O）
         self._index: Dict[str, Dict[str, Any]] = self._load_json(self.index_path, {})
+        # 索引损坏时回落为空字典，避免后续 .get 崩溃
+        if not isinstance(self._index, dict):
+            self._index = {}
         # WebUI 覆盖配置：叠加在 AstrBot 注入的 self.config 之上（删除 _conf_schema.json 后唯一持久入口）
         self._load_plugin_config_overlay()
         _raw_seen = self._load_json(self.seen_path, {})
@@ -174,7 +185,6 @@ class XbdocStoreMixin:
                         else:
                             _scrubbed += 1
                             continue
-                        _scrubbed += 1
                     self._seen_groups[_k] = _v
         if _scrubbed:
             logger.warning(f"[{PLUGIN_NAME}] 启动清理污染群记录 {_scrubbed} 条")
@@ -585,6 +595,12 @@ class XbdocStoreMixin:
             return self._chunk_tokens_cache[doc_id]
         chunks = self._load_chunks(doc_id)
         counters = [Counter(tokenize(ch)) for ch in chunks]
+        if len(self._chunk_tokens_cache) > 200:
+            try:
+                oldest = next(iter(self._chunk_tokens_cache))
+                self._chunk_tokens_cache.pop(oldest, None)
+            except Exception:
+                pass
         self._chunk_tokens_cache[doc_id] = counters
         return counters
 
@@ -1020,7 +1036,7 @@ class XbdocStoreMixin:
                 if k == "max_inject_chars":
                     cfg[k] = max(0, iv)
                 elif k in ("chunk_size", "chunk_overlap", "top_k"):
-                    if iv <= 0:
+                    if iv < 0 or (iv == 0 and k != "chunk_overlap"):
                         continue
                     if k == "chunk_size":
                         iv = max(200, iv)

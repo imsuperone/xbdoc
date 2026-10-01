@@ -64,7 +64,7 @@ def apply_system_prompt(req, text: str, replace: bool) -> None:
             pass
 
 
-def truncate_text(body: str, max_chars: int, min_remain: int = 200) -> str:
+def truncate_text(body: str, max_chars: int) -> str:
     """截断公共逻辑：max_chars <= 0 不限制；总长（含标记）严格 ≤ max_chars；专属提示词永不经此截断。"""
     body = body or ""
     if max_chars <= 0:
