@@ -570,52 +570,6 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip,
 }
 
 /* ==========================================================================
-   xbdoc: Glanceable Hero Stats (Expressive Widgets on m3 tokens)
-   ========================================================================== */
-.hero-widget-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.hero-widget {
-  background: var(--m3-sys-color-surface-container-high);
-  border: 1px solid var(--m3-sys-color-divider);
-  border-radius: var(--m3-radius-large);
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  box-shadow: var(--m3-shadow-card);
-  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.hero-widget:hover {
-  border-color: var(--m3-sys-color-outline-variant);
-  background: var(--m3-sys-color-surface-container-highest);
-}
-
-.hero-widget .widget-label {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--m3-sys-color-outline);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hero-widget .widget-val {
-  font-size: 26px;
-  font-weight: 800;
-  color: var(--m3-sys-color-on-surface);
-  margin-top: 6px;
-  letter-spacing: -0.5px;
-}
-
-/* ==========================================================================
    xbdoc: Drag-and-Drop Upload Zone
    ========================================================================== */
 .dropzone-container {
@@ -1451,20 +1405,6 @@ code.mono {
   .seg-item {
     flex: 1 1 auto;
     padding: 10px 14px;
-  }
-
-  .hero-widget-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-
-  .hero-widget {
-    padding: 12px 14px;
-  }
-
-  .hero-widget .widget-val {
-    font-size: 22px;
   }
 
   .dropzone-container {

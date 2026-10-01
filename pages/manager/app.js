@@ -229,20 +229,6 @@
     });
   }
 
-  // ---- Stats Counters ----
-  function updateStats() {
-    const docEl = $("statDocs");
-    const chunkEl = $("statChunks");
-    const bindEl = $("statBindings");
-
-    if (docEl) docEl.textContent = docsList.length;
-    if (chunkEl) {
-      const total = docsList.reduce((acc, d) => acc + (parseInt(d.chunks) || 0), 0);
-      chunkEl.textContent = total;
-    }
-    if (bindEl) bindEl.textContent = Object.keys(bindingsMap).length;
-  }
-
   // ---- Load Docs ----
   async function loadDocs() {
     try {
@@ -253,7 +239,6 @@
         if (!docsList.some((d) => d.doc_id === id)) selectedDocIds.delete(id);
       }
       renderDocChips();
-      updateStats();
     } catch (e) {
       console.error("[DocMemory] loadDocs error:", e);
       showToast("获取文档失败: " + e.message);
@@ -266,7 +251,6 @@
       const res = await api.get("bindings");
       bindingsMap = res.bindings || {};
       renderBindings();
-      updateStats();
     } catch (e) {
       console.error("[DocMemory] loadBindings error:", e);
       showToast("获取绑定失败: " + e.message);
