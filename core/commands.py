@@ -125,9 +125,11 @@ class XbdocCommandsMixin:
                 lines.append("💻 说明：当前会话处于独立工作区沙箱，大模型仅对工作区内的挂载文档进行严谨分析与回答。")
             elif sess.get("mode") == "system":
                 lines.append("⚡ 说明：大模型已将文档作为最高系统设定执行，强制遵守文档规则与设定。")
+            elif sess.get("mode") == "none":
+                lines.append("🚫 说明：当前模式下不注入文档，仅保留专属提示词与人格屏蔽等配置。")
             else:
                 lines.append("📖 说明：群内提问相关内容时，AI 将检索片段作为参考资料引用回答。")
-            lines.append("\n💡 切换模式：/xbdoc mode workspace / system / reference")
+            lines.append("\n💡 切换模式：/xbdoc mode workspace / system / reference / none")
             lines.append("💡 查看工作区：/xbdoc workspace")
             lines.append("💡 切换屏蔽：/xbdoc shield on / off")
         yield event.plain_result("\n".join(lines).strip())
@@ -333,7 +335,7 @@ class XbdocCommandsMixin:
             f"• 绑定文档：{len(doc_ids)} 篇\n"
             f"• 专属提示词：\n{preview or '（未设置）'}\n\n"
             "⚙️ 管理指令：\n"
-            "• /xbdoc mode system | workspace | reference\n"
+            "• /xbdoc mode system | workspace | reference | none\n"
             "• /xbdoc shield on | off\n"
             "• /xbdoc prompt_set <内容>\n"
             "• /xbdoc prompt_clear"

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>文档记忆助手</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.6" />
+  <link rel="stylesheet" href="./style.css?v=1.2.7" />
 </head>
 <body>
   <div class="app-layout">
@@ -12,7 +12,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>文档记忆助手 <span class="version-tag">v1.2.6</span></h1>
+          <h1>文档记忆助手 <span class="version-tag">v1.2.7</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -298,7 +298,7 @@
                   • <strong>⚡ 强制遵守文档（系统提示词模式）</strong>：将文档核心内容直接作为最高优先级系统提示词载入大模型，专属提示词作为额外提示词追加，强制 AI 无条件遵守并执行文档里的角色设定与规则。<br/>
                   • <strong>💻 模拟工作区模式（项目沙箱）</strong>：将绑定的文件作为工作区沙箱挂载，大模型严格基于工作区内挂载的文件进行专业分析、开发与解答，0其余说教提示词。<br/>
                   • <strong>📖 仅作参考资料模式（知识库问答）</strong>：文档作为外部知识库，提问相关内容时自动检索切片作为参考资料引用回答。<br/>
-                  • <strong>🚫 无（不注入）</strong>：绑定的文档保留但完全不注入上下文，仅专属提示词/人格屏蔽等配置生效，适合临时停用文档引用。
+                  • <strong>🚫 无（不注入）</strong>：绑定的文档保留但完全不注入上下文，仅专属提示词/人格屏蔽等配置生效，适合临时停用文档引用（新建绑定默认为此模式）。
                 </p>
               </div>
             </div>
@@ -370,6 +370,6 @@
   </div>
 
   <script src="./api.js" defer></script>
-  <script src="./app.js?v=1.2.6" defer></script>
+  <script src="./app.js?v=1.2.7" defer></script>
 </body>
 </html>

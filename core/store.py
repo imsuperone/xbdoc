@@ -99,7 +99,7 @@ CONFIG_META: Dict[str, Dict[str, Any]] = {
 }
 
 # 模式强度（隔离级别）：脏 key 合并时高强度胜出，保证结果与遍历顺序无关
-_MODE_PRIORITY = {"reference": 0, "system": 1, "workspace": 2}
+_MODE_PRIORITY = {"none": -1, "reference": 0, "system": 1, "workspace": 2}
 
 
 def _locked(method):
@@ -829,7 +829,7 @@ class XbdocStoreMixin:
     def _get_entry(self, session_key: str) -> Dict[str, Any]:
         ck = self._canonical_key_str(session_key)
         return self._bindings.setdefault(ck, {
-            "doc_ids": [], "prompt": "", "shield": False, "mode": "reference", "force_system_prompt": False,
+            "doc_ids": [], "prompt": "", "shield": False, "mode": "none", "force_system_prompt": False,
         })
 
 
@@ -937,7 +937,7 @@ class XbdocStoreMixin:
 
 
     def _prune_empty_entry(self, session_key: str) -> bool:
-        """解绑后若该会话无文档、无提示词、无屏蔽/强制/断史且为默认模式，则彻底删除条目。
+        """解绑后若该会话无文档、无提示词、无屏蔽/强制/断史且为默认模式（reference / none），则彻底删除条目。
 
         避免 bindings.json 堆积空壳，会话列表看着像“没解掉”。
         """
@@ -951,7 +951,7 @@ class XbdocStoreMixin:
             and not ent.get("shield", False)
             and not ent.get("force_system_prompt", False)
             and not ent.get("ignore_history", False)
-            and str(ent.get("mode") or "reference") == "reference"
+            and str(ent.get("mode") or "reference") in ("reference", "none")
         ):
             self._bindings.pop(ck, None)
             return True
