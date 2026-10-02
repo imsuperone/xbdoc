@@ -1516,12 +1516,6 @@ code.mono {
   color: var(--m3-sys-color-outline);
 }
 
-.empty-state-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  opacity: 0.6;
-}
-
 .empty-state h3 {
   font-size: 16px;
   font-weight: 700;
