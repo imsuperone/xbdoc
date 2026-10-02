@@ -87,7 +87,7 @@
             if (picker.dataset.custom) applyAccentColor(picker.value, false);
             else applyAccentColor("", false);
           }
-          showToast(`管理台界面已切换为${next === "dark" ? "深色暗黑" : "浅色明亮"}模式`);
+          showToast(`当前界面已切换为${next === "dark" ? "深色" : "浅色"}模式。`);
         });
       }
       // Align picker with the current theme default on first paint
@@ -207,9 +207,212 @@
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         applyAccentColor("", false);
-        showToast("已恢复默认主题色");
+        showToast("已恢复默认主题颜色。");
       });
     }
+  }
+
+  function hexToHsv(hex) {
+    const r = parseInt(hex.substr(1, 2), 16) / 255;
+    const g = parseInt(hex.substr(3, 2), 16) / 255;
+    const b = parseInt(hex.substr(5, 2), 16) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    const d = mx - mn;
+    let h = 0;
+    if (d !== 0) {
+      if (mx === r) h = 60 * (((g - b) / d) % 6);
+      else if (mx === g) h = 60 * ((b - r) / d + 2);
+      else h = 60 * ((r - g) / d + 4);
+    }
+    if (h < 0) h += 360;
+    return { h: h, s: mx === 0 ? 0 : d / mx, v: mx };
+  }
+
+  function hsvToHex(h, s, v) {
+    const c = v * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = v - c;
+    let rp = 0, gp = 0, bp = 0;
+    if (h < 60) { rp = c; gp = x; bp = 0; }
+    else if (h < 120) { rp = x; gp = c; bp = 0; }
+    else if (h < 180) { rp = 0; gp = c; bp = x; }
+    else if (h < 240) { rp = 0; gp = x; bp = c; }
+    else if (h < 300) { rp = x; gp = 0; bp = c; }
+    else { rp = c; gp = 0; bp = x; }
+    const to2 = (n) => Math.round((n + m) * 255).toString(16).padStart(2, "0");
+    return "#" + to2(rp) + to2(gp) + to2(bp);
+  }
+
+  function initAccentPopover() {
+    const btn = $("accentPickerBtn");
+    const picker = $("accentPicker");
+    const pop = $("accentPopover");
+    if (!btn || !picker || !pop) return;
+    const sv = $("accentSv");
+    const svDot = $("accentSvDot");
+    const hue = $("accentHue");
+    const hueDot = $("accentHueDot");
+    const hexInput = $("accentHex");
+    const current = $("accentCurrent");
+    const presets = $("accentPresets");
+    let st = { h: 210, s: 0.66, v: 0.85 };
+    let open = false;
+
+    function currentHex() {
+      const v = (picker.value || "").trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+      try {
+        const def = getComputedStyle(document.documentElement).getPropertyValue("--m3-sys-color-primary").trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(def)) return def;
+      } catch (e) {}
+      return "#4A90D9";
+    }
+
+    function paint() {
+      const hex = hsvToHex(st.h, st.s, st.v);
+      if (sv) sv.style.background = "linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,transparent),hsl(" + Math.round(st.h) + ",100%,50%)";
+      if (svDot) { svDot.style.left = (st.s * 100) + "%"; svDot.style.top = ((1 - st.v) * 100) + "%"; svDot.style.background = hex; }
+      if (hueDot) { hueDot.style.left = (st.h / 360 * 100) + "%"; hueDot.style.background = "hsl(" + Math.round(st.h) + ",100%,50%)"; }
+      if (hexInput && document.activeElement !== hexInput) hexInput.value = hex;
+      if (current) current.style.background = hex;
+    }
+
+    function commit(fireChange) {
+      const hex = hsvToHex(st.h, st.s, st.v);
+      picker.value = hex;
+      picker.dispatchEvent(new Event("input"));
+      if (fireChange) picker.dispatchEvent(new Event("change"));
+      if (hexInput) hexInput.value = hex;
+      if (current) current.style.background = hex;
+    }
+
+    function place() {
+      pop.hidden = false;
+      const r = btn.getBoundingClientRect();
+      const w = pop.offsetWidth || 240;
+      const hgt = pop.offsetHeight || 260;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      let left = r.left + 20 - w / 2;
+      left = Math.max(8, Math.min(left, Math.max(8, vw - w - 8)));
+      let top = r.bottom + 8;
+      if (top + hgt > vh - 8) top = Math.max(8, r.top - hgt - 8);
+      pop.style.left = left + "px";
+      pop.style.top = top + "px";
+    }
+
+    function show() {
+      st = hexToHsv(currentHex());
+      paint();
+      place();
+      open = true;
+    }
+
+    function hide() {
+      pop.hidden = true;
+      open = false;
+    }
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (open) hide();
+      else show();
+    });
+
+    pop.addEventListener("click", (e) => e.stopPropagation());
+
+    function svSet(e) {
+      const r = sv.getBoundingClientRect();
+      st.s = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      st.v = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+      paint();
+      commit(false);
+    }
+
+    if (sv) {
+      sv.addEventListener("pointerdown", (e) => {
+        try { sv.setPointerCapture(e.pointerId); } catch (err) {}
+        svSet(e);
+        const mv = (ev) => svSet(ev);
+        const up = () => {
+          sv.removeEventListener("pointermove", mv);
+          picker.dispatchEvent(new Event("change"));
+        };
+        sv.addEventListener("pointermove", mv);
+        sv.addEventListener("pointerup", up, { once: true });
+      });
+    }
+
+    function hueSet(e) {
+      const r = hue.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      st.h = ratio * 360;
+      if (st.h >= 360) st.h = 359.9;
+      paint();
+      commit(false);
+    }
+
+    if (hue) {
+      hue.addEventListener("pointerdown", (e) => {
+        try { hue.setPointerCapture(e.pointerId); } catch (err) {}
+        hueSet(e);
+        const mv = (ev) => hueSet(ev);
+        const up = () => {
+          hue.removeEventListener("pointermove", mv);
+          picker.dispatchEvent(new Event("change"));
+        };
+        hue.addEventListener("pointermove", mv);
+        hue.addEventListener("pointerup", up, { once: true });
+      });
+    }
+
+    function applyHexInput() {
+      const v = (hexInput.value || "").trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        st = hexToHsv(v);
+        paint();
+        picker.value = v;
+        picker.dispatchEvent(new Event("input"));
+        picker.dispatchEvent(new Event("change"));
+        if (current) current.style.background = v;
+      } else {
+        hexInput.value = currentHex();
+      }
+    }
+
+    if (hexInput) {
+      hexInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") applyHexInput();
+        if (e.key === "Escape") hide();
+      });
+      hexInput.addEventListener("blur", applyHexInput);
+      hexInput.addEventListener("click", (e) => e.stopPropagation());
+    }
+
+    if (presets) {
+      presets.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-color]");
+        if (!b) return;
+        const v = b.getAttribute("data-color") || "";
+        if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
+        st = hexToHsv(v);
+        paint();
+        picker.value = v;
+        picker.dispatchEvent(new Event("input"));
+        picker.dispatchEvent(new Event("change"));
+        if (current) current.style.background = v;
+      });
+    }
+
+    document.addEventListener("click", (e) => {
+      if (!open) return;
+      if (!e.target.closest("#accentPopover") && !e.target.closest("#accentPickerBtn")) hide();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && open) hide();
+    });
+
+    window.addEventListener("resize", () => { if (open) place(); });
   }
 
   // ---- Navigation Tabs (xbimg framework pattern: data-tab <-> data-section) ----
@@ -243,7 +446,7 @@
       renderDocChips();
     } catch (e) {
       console.error("[DocMemory] loadDocs error:", e);
-      showToast("获取文档失败: " + e.message);
+      showToast("文档列表获取失败：" + e.message);
     }
   }
 
@@ -255,7 +458,7 @@
       renderBindings();
     } catch (e) {
       console.error("[DocMemory] loadBindings error:", e);
-      showToast("获取绑定失败: " + e.message);
+      showToast("绑定列表获取失败：" + e.message);
     }
   }
 
@@ -268,8 +471,8 @@
       container.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1;">
           <div class="empty-state-icon">📂</div>
-          <h3>暂无入库文档</h3>
-          <p>支持将 .md / .txt / .pdf / .docx 文件拖放至上方卡片直接上传</p>
+          <h3>暂无已入库文档</h3>
+          <p>可将 .md / .txt / .pdf / .docx 文件拖放至上方区域进行上传</p>
         </div>`;
       return;
     }
@@ -334,9 +537,9 @@
         if (did) {
           try {
             await navigator.clipboard.writeText(did);
-            showToast(`✅ 已复制文档 ID: ${did}`);
+            showToast(`文档 ID 已复制：${did}`);
           } catch {
-            showToast(`文档 ID: ${did}`);
+            showToast(`文档 ID 为：${did}`);
           }
         }
         return;
@@ -354,10 +557,10 @@
         openReader(id, 1);
       } else if (act === "download") {
         try {
-          showToast("开始下载文档…");
+          showToast("正在下载文档，请稍候……");
           await api.download("docs/download", { doc_id: id });
         } catch (err) {
-          showToast("下载失败: " + err.message);
+          showToast("文档下载失败：" + err.message);
         }
       } else if (act === "attach") {
         selectedDocIds.add(id);
@@ -365,16 +568,16 @@
         switchTab("tab-bindings");
         const sk = $("sessionKey");
         if (sk) sk.focus();
-        showToast("已添加该文档至绑定表单");
+        showToast("已将该文档添加至绑定表单。");
       } else if (act === "delete") {
         try {
-          showToast(`正在删除文档 (ID: ${id})…`);
+          showToast(`正在删除文档（ID：${id}），请稍候……`);
           await api.post("docs/delete", { doc_id: id });
-          showToast("✅ 文档已成功删除，相关绑定已同步清理");
+          showToast("文档已删除，相关绑定已同步清理。");
           await loadDocs();
           await loadBindings();
         } catch (err) {
-          showToast("删除失败: " + err.message);
+          showToast("文档删除失败：" + err.message);
         }
       }
     });
@@ -437,20 +640,20 @@
     async function handleUpload(file) {
       if (!file) return;
       if (file.size > 50 * 1024 * 1024) {
-        showToast("文件超出 50MB 上限，请拆分后上传");
+        showToast("文件大小超出 50MB 上限，请拆分后重新上传。");
         return;
       }
       if (progress) progress.style.display = "block";
-      showToast(`正在上传并切片 ${file.name}…`, 5000);
+      showToast(`正在上传并处理文件 ${file.name}，请稍候……`, 5000);
 
       try {
         const res = await api.upload("docs/upload", file);
         if (progress) progress.style.display = "none";
-        showToast(`✅ 文档 ${res.doc?.filename || file.name} 入库成功！`);
+        showToast(`文档 ${res.doc?.filename || file.name} 已完成入库。`);
         await loadDocs();
       } catch (err) {
         if (progress) progress.style.display = "none";
-        showToast("❌ 上传失败: " + err.message);
+        showToast("文档上传失败：" + err.message);
       }
     }
   }
@@ -461,7 +664,7 @@
     if (!container) return;
 
     if (!docsList.length) {
-      container.innerHTML = `<span class="helper">知识库暂无文档，请先在文档库上传。</span>`;
+      container.innerHTML = `<span class="helper">知识库中暂无文档，请先前往文档库完成上传。</span>`;
       return;
     }
 
@@ -488,7 +691,7 @@
       } else {
         modeRow.classList.add("disabled");
         modeRow.querySelectorAll("button").forEach((b) => b.disabled = true);
-        if (modeSub) modeSub.textContent = "请先在上方选择要绑定的文档";
+        if (modeSub) modeSub.textContent = "请先在上方选择需要绑定的文档";
       }
     }
   }
@@ -549,7 +752,7 @@
               <span>${esc(g.platform ? g.platform + ' · ' : '')}${isPrivate ? "私聊 UID" : "群号"}: ${esc(g.gid)} ${g.msg_count ? ' · ' + esc(g.msg_count) + '条发言' : ''}</span>
             </div>
           </div>
-          ${g.bound ? '<span class="badge-pill" style="background:var(--m3-sys-color-primary-container); color:var(--m3-sys-color-primary); font-weight:600;">已绑定</span>' : '<span class="badge-pill">选用</span>'}
+          ${g.bound ? '<span class="badge-pill" style="background:var(--m3-sys-color-primary-container); color:var(--m3-sys-color-primary); font-weight:600;">已绑定</span>' : '<span class="badge-pill">选择</span>'}
         </div>
       `;
     }).join("");
@@ -567,8 +770,8 @@
       fetchBtn.addEventListener("click", async () => {
         const originalHtml = fetchBtn.innerHTML;
         fetchBtn.disabled = true;
-        fetchBtn.innerHTML = `<span>拉取中…</span>`;
-        showToast("正在向机器人适配器拉取已加入的群聊…", 4000);
+        fetchBtn.innerHTML = `<span>正在获取……</span>`;
+        showToast("正在从机器人适配器获取群聊列表，请稍候……", 4000);
 
         try {
           let res = null;
@@ -594,14 +797,14 @@
           input.focus();
 
           if (newCount > 0) {
-            showToast(`✅ 成功从适配器拉取到 ${newCount} 个群聊（共收录 ${groupsCache.length} 个）！`, 3500);
+            showToast(`已从适配器获取 ${newCount} 个群聊（共收录 ${groupsCache.length} 个）。`, 3500);
           } else if (groupsCache.length > 0) {
-            showToast(`💡 适配器未返回新群${reason}，已为您列出 ${groupsCache.length} 个已知群聊`, 6000);
+            showToast(`适配器未返回新的群聊${reason}，当前共列出 ${groupsCache.length} 个已知群聊。`, 6000);
           } else {
-            showToast(`💡 拉群无结果${reason}。协议不支持时在群里发一条消息即可自动记录，或直接手填 group:群号。`, 7000);
+            showToast(`未获取到新的群聊${reason}。协议不支持时，在群聊中发送一条消息即可自动记录，或手动填写 group:群号。`, 7000);
           }
         } catch (err) {
-          showToast("获取群聊列表失败: " + err.message);
+          showToast("群聊列表获取失败：" + err.message);
         } finally {
           fetchBtn.disabled = false;
           fetchBtn.innerHTML = originalHtml;
@@ -711,7 +914,7 @@
     const label = $("promptCharCount");
     if (!box || !label) return;
     const n = (box.value || "").length;
-    label.textContent = n > 0 ? `已输入 ${n} 字` : "";
+    label.textContent = n > 0 ? `已输入 ${n} 字。` : "";
   }
 
   function loadExistingSessionSettings(key) {
@@ -756,7 +959,7 @@
 
   function setDocMode(val) {
     if (selectedDocIds.size === 0) {
-      showToast("请先选择要绑定的文档，再设置生效模式");
+      showToast("请先选择需要绑定的文档，再设置生效模式。");
       return;
     }
     _applyDocMode(val);
@@ -837,7 +1040,7 @@
         setShieldChoice("off");
         setForceChoice("off");
         _applyDocMode("none");
-        showToast("已清空表单输入");
+        showToast("表单内容已清空。");
       });
     }
 
@@ -848,7 +1051,7 @@
         const input = $("sessionKey");
         let key = input ? input.value.trim() : "";
         if (!key) {
-          showToast("请填写或选择目标会话 Key (例如 group:123456)");
+          showToast("请填写或选择目标会话标识（例如 group:123456）。");
           if (input) input.focus();
           return;
         }
@@ -895,13 +1098,13 @@
             mode: mode,
             force_system_prompt: forceSys,
           });
-          showToast("✅ 会话绑定与配置已成功保存！");
+          showToast("会话绑定与配置已保存。");
           loadedSessionKey = key;
           promptDirty = false;
           await loadBindings();
           await searchGroups("");
         } catch (err) {
-          showToast("❌ 保存失败: " + err.message);
+          showToast("配置保存失败：" + err.message);
         }
       });
     }
@@ -942,8 +1145,8 @@
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🔗</div>
-          <h3>暂无已绑定的会话</h3>
-          <p>您可以在上方选择群聊与文档进行绑定，也可在群内发送 /xbdoc bind 快捷绑定。</p>
+          <h3>当前暂无已绑定的会话</h3>
+          <p>可在上方选择群聊与文档完成绑定，亦可在群聊中发送 /xbdoc bind 指令进行快捷绑定。</p>
         </div>`;
       return;
     }
@@ -953,7 +1156,7 @@
         <div class="empty-state">
           <div class="empty-state-icon">🔍</div>
           <h3>未找到符合筛选条件的会话</h3>
-          <p>当前筛选状态下无匹配项，点击上方“全部会话”可查看所有记录。</p>
+          <p>当前筛选条件下暂无匹配记录，可点击“全部会话”查看所有记录。</p>
         </div>`;
       return;
     }
@@ -964,7 +1167,7 @@
       const prompt = raw.prompt || "";
       const isShield = Boolean(raw.shield);
       const shieldClass = isShield ? "shield-badge-on" : "shield-badge-off";
-      const shieldTag = isShield ? "🛡️ 屏蔽已开启 (清空原人格)" : "👤 屏蔽已关闭 (保留原人格)";
+      const shieldTag = isShield ? "🛡️ 屏蔽已开启（清空原人格）" : "👤 屏蔽已关闭（保留原人格）";
 
       const curMode = raw.mode === "system" ? "system" : (raw.mode === "workspace" ? "workspace" : (raw.mode === "none" ? "none" : "reference"));
 
@@ -982,20 +1185,20 @@
               <span class="badge-pill id-badge">${esc(k)}</span>
             </div>
             <div class="binding-card-docs">
-              ${docs.length ? docs.map((d) => `<span class="doc-tag">${esc(d.filename || d.doc_id || d)}</span>`).join("") : '<span class="helper">无绑定文档</span>'}
-              ${raw.force_system_prompt ? '<span class="badge-pill" style="background:#fee2e2; color:#991b1b; font-weight:700; border:1px solid #f87171;">⚡ 强制唯一系统词</span>' : ''}
+              ${docs.length ? docs.map((d) => `<span class="doc-tag">${esc(d.filename || d.doc_id || d)}</span>`).join("") : '<span class="helper">暂无绑定文档</span>'}
+              ${raw.force_system_prompt ? '<span class="badge-pill" style="background:#fee2e2; color:#991b1b; font-weight:700; border:1px solid #f87171;">⚡ 强制唯一系统提示词</span>' : ''}
               <span class="badge-pill ${shieldClass}">${esc(shieldTag)}</span>
-              ${prompt ? `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">🏷️ 专属提示词（${prompt.length}字）</span>` : ''}
+              ${prompt ? `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">🏷️ 专属提示词（共${prompt.length}字）</span>` : ''}
             </div>
             <div class="mode-select-row">
-              <span style="font-size:12px; font-weight:600; color:var(--m3-sys-color-outline); margin-right:4px;">生效模式:</span>
+              <span style="font-size:12px; font-weight:600; color:var(--m3-sys-color-outline); margin-right:4px;">生效模式：</span>
               ${docs.length ? `
                 <button class="mode-btn-pill ${curMode === 'none' ? 'active' : ''}" data-act="set-mode" data-mode="none" data-key="${esc(k)}" type="button">🚫 不注入</button>
                 <button class="mode-btn-pill ${curMode === 'reference' ? 'active' : ''}" data-act="set-mode" data-mode="reference" data-key="${esc(k)}" type="button">📖 仅作参考</button>
-                <button class="mode-btn-pill ${curMode === 'system' ? 'active' : ''}" data-act="set-mode" data-mode="system" data-key="${esc(k)}" type="button">⚡ 强制系统词</button>
-                <button class="mode-btn-pill ${curMode === 'workspace' ? 'active' : ''}" data-act="set-mode" data-mode="workspace" data-key="${esc(k)}" type="button">💻 工作区Agent</button>
+                <button class="mode-btn-pill ${curMode === 'system' ? 'active' : ''}" data-act="set-mode" data-mode="system" data-key="${esc(k)}" type="button">⚡ 强制系统提示词</button>
+                <button class="mode-btn-pill ${curMode === 'workspace' ? 'active' : ''}" data-act="set-mode" data-mode="workspace" data-key="${esc(k)}" type="button">💻 工作区模式</button>
               ` : `
-                <span class="helper" style="font-size:12px;">（未绑定文档，模式已禁用。仅专属系统词生效）</span>
+                <span class="helper" style="font-size:12px;">（当前未绑定文档，生效模式不可用，仅专属系统提示词生效）</span>
               `}
             </div>
           </div>
@@ -1035,9 +1238,9 @@
         if (sk) {
           try {
             await navigator.clipboard.writeText(sk);
-            showToast(`✅ 已复制会话 Key: ${sk}`);
+            showToast(`会话标识已复制：${sk}`);
           } catch {
-            showToast(`会话 Key: ${sk}`);
+            showToast(`会话标识为：${sk}`);
           }
         }
         return;
@@ -1055,10 +1258,10 @@
         if (cur.mode === targetMode) return;
 
         const modeLabels = {
-          system: "⚡ 已切换为【强制遵守文档（系统提示词）】！",
-          workspace: "💻 已切换为【模拟工作区 Agent 模式】！",
-          reference: "📖 已切换为【仅作参考资料（记忆库）】！",
-          none: "🚫 已切换为【无（不注入文档）】！",
+          system: "已切换至强制遵守文档（系统提示词）模式。",
+          workspace: "已切换至模拟工作区模式。",
+          reference: "已切换至仅作参考资料模式。",
+          none: "已切换至无（不注入文档）模式。",
         };
 
         try {
@@ -1073,7 +1276,7 @@
           showToast(modeLabels[targetMode] || "模式已更新");
           await loadBindings();
         } catch (err) {
-          showToast("模式切换失败: " + err.message);
+          showToast("生效模式切换失败：" + err.message);
         }
         return;
       }
@@ -1084,11 +1287,11 @@
           input.value = key;
           loadExistingSessionSettings(key);
           window.scrollTo({ top: 180, behavior: "smooth" });
-          showToast("已载入会话配置");
+          showToast("会话配置已载入。");
         }
       } else if (act === "unbind") {
         try {
-          showToast(`正在解绑 ${key} 的文档与相关配置…`);
+          showToast(`正在解除 ${key} 的文档绑定与相关配置，请稍候……`);
           await api.post("bindings/save", {
             session_key: key,
             doc_ids: [],
@@ -1103,10 +1306,10 @@
             selectedDocIds.clear();
             renderDocChips();
           }
-          showToast(`✅ 已成功解除 ${key} 的全部文档绑定`);
+          showToast(`已解除 ${key} 的全部文档绑定。`);
           await loadBindings();
         } catch (err) {
-          showToast("解绑失败: " + err.message);
+          showToast("绑定解除失败：" + err.message);
         }
       }
     });
@@ -1135,9 +1338,9 @@
     const prevBtn = $("prevChunkBtn");
     const nextBtn = $("nextChunkBtn");
 
-    if (titleEl) titleEl.textContent = "正在加载切片…";
+    if (titleEl) titleEl.textContent = "正在加载文档切片……";
     if (subEl) subEl.textContent = `切片 ${chunk}`;
-    if (textEl) textEl.textContent = "正在向服务器请求文档片段…";
+    if (textEl) textEl.textContent = "正在从服务器获取文档片段，请稍候……";
 
     const cacheKey = `${docId}:${chunk}`;
     const applyRes = (res) => {
@@ -1145,7 +1348,7 @@
       currentReaderChunk = res.chunk || chunk;
       if (titleEl) titleEl.textContent = res.meta?.filename || res.filename || docId;
       if (subEl) subEl.textContent = `切片 ${res.chunk} / ${res.total} (共 ${res.meta?.text_len || 0} 字)`;
-      if (textEl) textEl.textContent = res.preview || "（该切片暂无文本内容）";
+      if (textEl) textEl.textContent = res.preview || "该切片暂无文本内容。";
 
       if (prevBtn) prevBtn.disabled = currentReaderChunk <= 1;
       if (nextBtn) nextBtn.disabled = currentReaderChunk >= currentReaderTotal;
@@ -1171,7 +1374,7 @@
       if (currentReaderDoc !== docId || currentReaderChunk !== chunk) return;
       applyRes(res);
     } catch (err) {
-      if (textEl) textEl.textContent = "读取切片失败: " + err.message;
+      if (textEl) textEl.textContent = "文档切片读取失败：" + err.message;
     }
   }
 
@@ -1228,9 +1431,9 @@
             document.execCommand("copy");
             document.body.removeChild(ta);
           }
-          showToast("✅ 已复制切片文本到剪贴板");
+          showToast("切片文本已复制至剪贴板。");
         } catch (e) {
-          showToast("复制失败，请手动选取复制");
+          showToast("文本复制失败，请手动选取并复制。");
         }
       });
     }
@@ -1245,7 +1448,7 @@
           switchTab("tab-bindings");
           const input = $("sessionKey");
           if (input) input.focus();
-          showToast("已选择该文档，请选定绑定的会话");
+          showToast("已选择该文档，请指定需要绑定的会话。");
         }
       });
     }
@@ -1257,7 +1460,7 @@
     if (exportBtn) {
       exportBtn.addEventListener("click", async () => {
         try {
-          showToast("正在导出绑定备份…");
+          showToast("正在导出绑定备份，请稍候……");
           const data = await api.get("bindings/export");
           const map = (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
           const blob = new Blob([JSON.stringify(map, null, 2)], { type: "application/json" });
@@ -1270,9 +1473,9 @@
           a.click();
           a.remove();
           setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-          showToast(`✅ 已导出 ${Object.keys(map).length} 个会话绑定`);
+          showToast(`已导出 ${Object.keys(map).length} 个会话的绑定配置。`);
         } catch (err) {
-          showToast("导出失败: " + err.message);
+          showToast("备份导出失败：" + err.message);
         }
       });
     }
@@ -1289,24 +1492,24 @@
         try {
           map = JSON.parse(await f.text());
         } catch (e) {
-          showToast("备份文件不是合法 JSON");
+          showToast("所选文件并非合法的 JSON 格式。");
           return;
         }
         if (!map || typeof map !== "object" || Array.isArray(map) || !Object.keys(map).length) {
-          showToast("备份文件里没有绑定数据");
+          showToast("备份文件中未包含绑定数据。");
           return;
         }
         const n = Object.keys(map).length;
-        if (!confirm(`从备份导入 ${n} 个会话配置（合并到现有配置）？`)) return;
-        const replace = confirm("是否【覆盖】现有全部配置？\n确定 = 覆盖，取消 = 合并");
+        if (!confirm(`将从备份导入 ${n} 个会话配置，并合并至现有配置，是否继续？`)) return;
+        const replace = confirm("是否覆盖现有全部配置？选择“确定”将覆盖现有配置，选择“取消”则合并至现有配置。");
         try {
           const res = await api.post(`bindings/import?mode=${replace ? "replace" : "merge"}`, map);
           const skipped = (res.skipped_docs || []).length;
-          showToast(`✅ 已导入 ${res.applied || 0} 个会话${skipped ? `，${skipped} 个文档不存在已跳过` : ""}`);
+          showToast(`已导入 ${res.applied || 0} 个会话的配置${skipped ? `，其中 ${skipped} 个文档不存在，已跳过` : ""}。`);
           await loadBindings();
           await searchGroups("");
         } catch (err) {
-          showToast("导入失败: " + err.message);
+          showToast("备份导入失败：" + err.message);
         }
       });
     }
@@ -1324,7 +1527,7 @@
       renderSettings();
     } catch (e) {
       console.error("[DocMemory] loadSettings error:", e);
-      showToast("获取插件设置失败: " + e.message);
+      showToast("插件设置获取失败：" + e.message);
     }
   }
 
@@ -1333,7 +1536,7 @@
     if (!container) return;
     const keys = Object.keys(settingsMeta);
     if (!keys.length) {
-      container.innerHTML = `<span class="helper">暂无可配置项</span>`;
+      container.innerHTML = `<span class="helper">当前暂无可配置项。</span>`;
       return;
     }
 
@@ -1352,10 +1555,7 @@
               <div class="switch-label-title">${esc(desc)}</div>
               <div class="switch-label-sub">${esc(hint)}</div>
             </div>
-            <div class="segmented-choice" data-choice="${esc(k)}">
-              <button class="segmented-choice-btn ${on ? "" : "active"}" data-val="off" type="button">关</button>
-              <button class="segmented-choice-btn ${on ? "active" : ""}" data-val="on" type="button">开</button>
-            </div>
+            <label class="m3-switch"><input type="checkbox" data-switch="${esc(k)}" ${on ? "checked" : ""} /><span class="switch-slider"></span></label>
           </div>`;
       }
 
@@ -1378,9 +1578,8 @@
     const out = {};
     for (const [k, m] of Object.entries(settingsMeta)) {
       if ((m.type || "int") === "bool") {
-        const group = document.querySelector(`[data-choice="${k}"]`);
-        const active = group ? group.querySelector(".segmented-choice-btn.active") : null;
-        out[k] = active ? active.dataset.val === "on" : Boolean(m.default);
+        const sw = document.querySelector(`[data-switch="${k}"]`);
+        out[k] = sw ? sw.checked : Boolean(m.default);
       } else {
         const el = $("set_" + k);
         if (!el) continue;
@@ -1396,13 +1595,8 @@
     for (const [k, m] of Object.entries(settingsMeta)) {
       const val = src[k] !== undefined ? src[k] : m.default;
       if ((m.type || "int") === "bool") {
-        const group = document.querySelector(`[data-choice="${k}"]`);
-        if (group) {
-          const want = val ? "on" : "off";
-          group.querySelectorAll(".segmented-choice-btn").forEach((b) => {
-            b.classList.toggle("active", b.dataset.val === want);
-          });
-        }
+        const sw = document.querySelector(`[data-switch="${k}"]`);
+        if (sw) sw.checked = Boolean(val);
       } else {
         const el = $("set_" + k);
         if (el) el.value = val === undefined || val === null ? "" : val;
@@ -1432,9 +1626,9 @@
           settingsConfig = res.config || config;
           settingsMeta = res.meta || settingsMeta;
           renderSettings();
-          showToast("✅ 插件设置已保存并生效");
+          showToast("插件设置已保存并生效。");
         } catch (err) {
-          showToast("保存失败: " + err.message);
+          showToast("设置保存失败：" + err.message);
         }
       });
     }
@@ -1443,7 +1637,7 @@
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         applySettingsValues({});
-        showToast("已回填默认值（点击保存后生效）");
+        showToast("已填入默认值，保存后方可生效。");
       });
     }
   }
@@ -1454,12 +1648,12 @@
     if (!btn) return;
 
     btn.addEventListener("click", async () => {
-      showToast("正在刷新全部数据…");
+      showToast("正在刷新全部数据，请稍候……");
       try {
         await Promise.all([loadDocs(), loadBindings(), loadSettings(), searchGroups("")]);
-        showToast("数据已刷新完毕");
+        showToast("全部数据已刷新完毕。");
       } catch (err) {
-        showToast("刷新部分失败: " + err.message);
+        showToast("部分数据刷新失败：" + err.message);
       }
     });
   }
@@ -1498,6 +1692,7 @@
     // 1. Synchronous UI initialization (never blocks)
     initTheme();
     initAccentPicker();
+    initAccentPopover();
     initTabs();
     initDocGridEvents();
     initDocSearch();
