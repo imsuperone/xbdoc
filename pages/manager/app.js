@@ -470,7 +470,6 @@
     if (!list.length) {
       container.innerHTML = `
         <div class="empty-state" style="grid-column: 1 / -1;">
-          <div class="empty-state-icon">📂</div>
           <h3>暂无已入库文档</h3>
           <p>可将 .md / .txt / .pdf / .docx 文件拖放至上方区域进行上传</p>
         </div>`;
@@ -1144,7 +1143,6 @@
     if (!allKeys.length) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-icon">🔗</div>
           <h3>当前暂无已绑定的会话</h3>
           <p>可在上方选择群聊与文档完成绑定，亦可在群聊中发送 /xbdoc bind 指令进行快捷绑定。</p>
         </div>`;
@@ -1154,7 +1152,6 @@
     if (!filteredKeys.length) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-icon">🔍</div>
           <h3>未找到符合筛选条件的会话</h3>
           <p>当前筛选条件下暂无匹配记录，可点击“全部会话”查看所有记录。</p>
         </div>`;
@@ -1167,7 +1164,7 @@
       const prompt = raw.prompt || "";
       const isShield = Boolean(raw.shield);
       const shieldClass = isShield ? "shield-badge-on" : "shield-badge-off";
-      const shieldTag = isShield ? "🛡️ 屏蔽已开启（清空原人格）" : "👤 屏蔽已关闭（保留原人格）";
+      const shieldTag = isShield ? "屏蔽已开启（清空原人格）" : "屏蔽已关闭（保留原人格）";
 
       const curMode = raw.mode === "system" ? "system" : (raw.mode === "workspace" ? "workspace" : (raw.mode === "none" ? "none" : "reference"));
 
@@ -1181,22 +1178,22 @@
         <div class="binding-card" data-key="${esc(k)}">
           <div class="binding-card-meta">
             <div class="binding-card-key">
-              <span class="binding-group-name">${isPrivateSession ? "💬" : "👥"} ${esc(groupDisplayName)}</span>
+              <span class="binding-group-name">${esc(groupDisplayName)}</span>
               <span class="badge-pill id-badge">${esc(k)}</span>
             </div>
             <div class="binding-card-docs">
               ${docs.length ? docs.map((d) => `<span class="doc-tag">${esc(d.filename || d.doc_id || d)}</span>`).join("") : '<span class="helper">暂无绑定文档</span>'}
-              ${raw.force_system_prompt ? '<span class="badge-pill" style="background:#fee2e2; color:#991b1b; font-weight:700; border:1px solid #f87171;">⚡ 强制唯一系统提示词</span>' : ''}
+              ${raw.force_system_prompt ? '<span class="badge-pill" style="background:#fee2e2; color:#991b1b; font-weight:700; border:1px solid #f87171;">强制唯一系统提示词</span>' : ''}
               <span class="badge-pill ${shieldClass}">${esc(shieldTag)}</span>
-              ${prompt ? `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">🏷️ 专属提示词（共${prompt.length}字）</span>` : ''}
+              ${prompt ? `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">专属提示词（共${prompt.length}字）</span>` : ''}
             </div>
             <div class="mode-select-row">
               <span style="font-size:12px; font-weight:600; color:var(--m3-sys-color-outline); margin-right:4px;">生效模式：</span>
               ${docs.length ? `
-                <button class="mode-btn-pill ${curMode === 'none' ? 'active' : ''}" data-act="set-mode" data-mode="none" data-key="${esc(k)}" type="button">🚫 不注入</button>
-                <button class="mode-btn-pill ${curMode === 'reference' ? 'active' : ''}" data-act="set-mode" data-mode="reference" data-key="${esc(k)}" type="button">📖 仅作参考</button>
-                <button class="mode-btn-pill ${curMode === 'system' ? 'active' : ''}" data-act="set-mode" data-mode="system" data-key="${esc(k)}" type="button">⚡ 强制系统提示词</button>
-                <button class="mode-btn-pill ${curMode === 'workspace' ? 'active' : ''}" data-act="set-mode" data-mode="workspace" data-key="${esc(k)}" type="button">💻 工作区模式</button>
+                <button class="mode-btn-pill ${curMode === 'none' ? 'active' : ''}" data-act="set-mode" data-mode="none" data-key="${esc(k)}" type="button">不注入</button>
+                <button class="mode-btn-pill ${curMode === 'reference' ? 'active' : ''}" data-act="set-mode" data-mode="reference" data-key="${esc(k)}" type="button">仅作参考</button>
+                <button class="mode-btn-pill ${curMode === 'system' ? 'active' : ''}" data-act="set-mode" data-mode="system" data-key="${esc(k)}" type="button">强制系统提示词</button>
+                <button class="mode-btn-pill ${curMode === 'workspace' ? 'active' : ''}" data-act="set-mode" data-mode="workspace" data-key="${esc(k)}" type="button">工作区模式</button>
               ` : `
                 <span class="helper" style="font-size:12px;">（当前未绑定文档，生效模式不可用，仅专属系统提示词生效）</span>
               `}
@@ -1672,14 +1669,23 @@
     try {
       const tag = document.querySelector(".version-tag");
       if (!tag) return;
-      const local = (tag.textContent || "").trim();
+      const local = String(tag.dataset.ver || "").trim().replace(/^v/i, "");
+      if (!local) return;
       fetch("https://raw.githubusercontent.com/imsuperone/xbdoc/main/metadata.yaml", { cache: "no-store" })
         .then((r) => (r && r.ok ? r.text() : Promise.reject(new Error("bad response"))))
         .then((t) => {
-          const m = /(?:^|\n)version:\s*([0-9]+(?:\.[0-9]+)*)/.exec(t || "");
-          if (m && _verCmp(m[1], local) > 0) tag.textContent = "检测更新 v" + m[1];
+          const m = /version:\s*["']?v?([0-9]+(?:\.[0-9]+)*)/i.exec(t || "");
+          if (m && _verCmp(m[1], local) > 0) {
+            const remote = String(m[1]).replace(/^v/i, "");
+            tag.textContent = "检测到更新 " + remote + "  当前版本号 " + local;
+          } else {
+            tag.textContent = local;
+          }
         })
-        .catch((e) => console.warn("[DocMemory] update check skipped:", e));
+        .catch((e) => {
+          tag.textContent = local;
+          console.warn("[DocMemory] update check skipped:", e);
+        });
     } catch (e) {
       console.warn("[DocMemory] update check error:", e);
     }

@@ -12,7 +12,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>文档记忆助手 <span class="version-tag">v1.2.10</span></h1>
+          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.10">1.2.10</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -86,7 +86,7 @@
 
         <!-- Document Library List -->
         <div class="m3-card">
-          <h2 class="card-title">📚 文档资料库</h2>
+          <h2 class="card-title">文档资料库</h2>
           <p class="card-desc">此处列出已完成切片入库的文档，可直接预览或绑定至指定会话。</p>
 
           <div class="form-group">
@@ -108,7 +108,7 @@
       <section class="settings-section" data-section="tab-bindings">
         <!-- Edit / Create Binding Card -->
         <div class="m3-card">
-          <h2 class="card-title">🔗 会话绑定与群专属配置</h2>
+          <h2 class="card-title">会话绑定与群专属配置</h2>
           <p class="card-desc">将文档分配至指定群聊，并可为该群单独配置附加提示词与人格屏蔽。</p>
 
           <!-- Session Key Selector -->
@@ -172,10 +172,10 @@
               <p class="field-hint" id="docModeSub">设置文档在会话中的角色定位与隔离级别</p>
             </div>
             <div class="segmented-choice" id="docModeGroup">
-              <button class="segmented-choice-btn active" data-val="none" type="button">🚫 无（不注入）</button>
-              <button class="segmented-choice-btn" data-val="reference" type="button">📖 仅作参考资料</button>
-              <button class="segmented-choice-btn" data-val="system" type="button">⚡ 强制 AI 遵守</button>
-              <button class="segmented-choice-btn" data-val="workspace" type="button">💻 模拟工作区</button>
+<button class="segmented-choice-btn active" data-val="none" type="button">无（不注入）</button>
+        <button class="segmented-choice-btn" data-val="reference" type="button">仅作参考资料</button>
+        <button class="segmented-choice-btn" data-val="system" type="button">强制 AI 遵守</button>
+        <button class="segmented-choice-btn" data-val="workspace" type="button">模拟工作区</button>
             </div>
           </div>
 
@@ -202,7 +202,7 @@
 
         <!-- Active Bindings List -->
         <div class="m3-card">
-          <h2 class="card-title">📋 已配置生效的会话</h2>
+          <h2 class="card-title">已配置生效的会话</h2>
           <p class="card-desc">以下为已完成配置并处于生效状态的会话，以群聊名称为主要标识，可查看各群的人格屏蔽状态。</p>
 
           <div class="form-group">
@@ -216,8 +216,8 @@
           <!-- Shield Persona Status Filter Chips -->
           <div class="shield-filter-group" id="shieldFilterGroup">
             <button class="shield-filter-chip active" data-filter="all" type="button">全部会话 (<span id="countAll">0</span>)</button>
-            <button class="shield-filter-chip" data-filter="shield_on" type="button">🛡️ 屏蔽已开启 (<span id="countShieldOn">0</span>)</button>
-            <button class="shield-filter-chip" data-filter="shield_off" type="button">👤 屏蔽已关闭 (<span id="countShieldOff">0</span>)</button>
+<button class="shield-filter-chip" data-filter="shield_on" type="button">屏蔽已开启 (<span id="countShieldOn">0</span>)</button>
+        <button class="shield-filter-chip" data-filter="shield_off" type="button">屏蔽已关闭 (<span id="countShieldOff">0</span>)</button>
           </div>
 
           <div id="bindingList" class="binding-cards-list">
@@ -229,7 +229,7 @@
       <!-- ==================== Tab 3: 插件设置 ==================== -->
       <section class="settings-section" data-section="tab-settings">
         <div class="m3-card">
-          <h2 class="card-title">⚙️ 插件设置</h2>
+          <h2 class="card-title">插件设置</h2>
           <p class="card-desc">AstrBot 插件配置项已迁移至本页，修改后将即时生效并持久保存至数据目录。</p>
 
           <div id="settingsForm" class="settings-form">
@@ -249,7 +249,7 @@
       <!-- ==================== Tab 4: 使用指南 ==================== -->
       <section class="settings-section" data-section="tab-guide">
         <div class="m3-card">
-          <h2 class="card-title">📖 聊天指令与快速入门</h2>
+          <h2 class="card-title">聊天指令与快速入门</h2>
           <p class="card-desc">本页提供群聊指令速查、生效模式说明与检索原理介绍。</p>
 
           <div style="display:flex; flex-direction:column; gap:16px;">
@@ -258,7 +258,7 @@
                 <strong style="color:var(--m3-sys-color-primary);">1. 群聊指令（仅群管理员可修改配置）</strong>
                 <div style="margin-top:10px; display:flex; flex-direction:column; gap:14px;">
                   <div class="cmd-group">
-                    <div class="cmd-group-title">📖 查看</div>
+                    <div class="cmd-group-title">查看</div>
                     <div class="cmd-row"><code class="mono">/xbdoc status</code><span>查询本群的绑定、模式、屏蔽与提示词状态</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc list</code><span>查询知识库中的全部文档及其 ID</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc workspace</code><span>查询工作区挂载清单与容量占用</span></div>
@@ -266,25 +266,25 @@
                     <div class="cmd-row"><code class="mono">/xbdoc read &lt;ID&gt; [n]</code><span>预览指定文档的切片内容</span></div>
                   </div>
                   <div class="cmd-group">
-                    <div class="cmd-group-title">🔗 绑定</div>
+                    <div class="cmd-group-title">绑定</div>
                     <div class="cmd-row"><code class="mono">/xbdoc bind &lt;ID...&gt;</code><span>追加绑定，将自动合并（私聊会话中可直接使用）</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc unbind [ID...]</code><span>解除绑定；参数留空则清空全部绑定，提示词将一并清除</span></div>
                     <div class="cmd-row"><code class="mono">私聊绑定</code><span>与机器人进行私聊后，系统将自动记录该会话，可在 WebUI 中按昵称或 UID 搜索绑定，亦可手动填写 private:UID</span></div>
                   </div>
                   <div class="cmd-group">
-                    <div class="cmd-group-title">🎛️ 模式（需先绑定文档）</div>
+                    <div class="cmd-group-title">模式（需先绑定文档）</div>
                     <div class="cmd-row"><code class="mono">/xbdoc mode s|w|r</code><span>切换为强制遵守、工作区或仅参考模式</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc shield on|off</code><span>开启人格屏蔽或恢复原人格</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc force on|off</code><span>设置专属提示词是否作为唯一系统提示词生效</span></div>
                   </div>
                   <div class="cmd-group">
-                    <div class="cmd-group-title">🏷️ 提示词</div>
+                    <div class="cmd-group-title">提示词</div>
                     <div class="cmd-row"><code class="mono">/xbdoc prompt</code><span>查看本群的提示词配置详情</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc prompt_set &lt;内容&gt;</code><span>设置本群的专属提示词</span></div>
                     <div class="cmd-row"><code class="mono">/xbdoc prompt_clear</code><span>清除本群的专属提示词</span></div>
                   </div>
                   <div class="cmd-group">
-                    <div class="cmd-group-title">🧹 历史</div>
+                    <div class="cmd-group-title">历史</div>
                     <div class="cmd-row"><code class="mono">/xbdoc no [off]</code><span>清除此前消息记录，或恢复消息读取</span></div>
                   </div>
                 </div>
@@ -295,10 +295,10 @@
               <div class="binding-card-meta">
                 <strong style="color:var(--m3-sys-color-primary);">2. 四大生效模式说明</strong>
                 <p style="margin-top:6px; color:var(--m3-sys-color-on-surface); line-height:1.7;">
-                  • <strong>⚡ 强制遵守文档（系统提示词模式）</strong>：将文档核心内容作为最高优先级系统提示词载入大模型，专属提示词将作为额外提示词追加，AI 将严格遵守并执行文档中的角色设定与规则。<br/>
-                  • <strong>💻 模拟工作区模式（项目沙箱）</strong>：将已绑定的文件作为工作区沙箱挂载，大模型将严格基于工作区内挂载的文件进行分析、开发与解答，不附加其余提示词。<br/>
-                  • <strong>📖 仅作参考资料模式（知识库问答）</strong>：文档将作为外部知识库，提问涉及相关内容时，系统将自动检索切片并作为参考资料引用回答。<br/>
-                  • <strong>🚫 无（不注入）</strong>：已绑定的文档将被保留，但不会注入上下文，仅专属提示词与人格屏蔽等配置生效，适用于临时停用文档引用的情形（新建绑定默认为此模式）。
+• <strong>强制遵守文档（系统提示词模式）</strong>：将文档核心内容作为最高优先级系统提示词载入大模型，专属提示词将作为额外提示词追加，AI 将严格遵守并执行文档中的角色设定与规则。<br/>
+        • <strong>模拟工作区模式（项目沙箱）</strong>：将已绑定的文件作为工作区沙箱挂载，大模型将严格基于工作区内挂载的文件进行分析、开发与解答，不附加其余提示词。<br/>
+        • <strong>仅作参考资料模式（知识库问答）</strong>：文档将作为外部知识库，提问涉及相关内容时，系统将自动检索切片并作为参考资料引用回答。<br/>
+        • <strong>无（不注入）</strong>：已绑定的文档将被保留，但不会注入上下文，仅专属提示词与人格屏蔽等配置生效，适用于临时停用文档引用的情形（新建绑定默认为此模式）。
                 </p>
               </div>
             </div>
