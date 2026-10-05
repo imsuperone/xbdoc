@@ -5,6 +5,7 @@
 - 修复：主题色与界面深浅色「刷新即恢复默认」——AstrBot 用沙箱 iframe 载插件页，`localStorage` 被禁，此前只写本地必然丢。现改存服务端配置 `ui_accent_color` / `ui_theme_mode`（新增 `CONFIG_DEFAULTS` / `CONFIG_META` 键并标 `hidden`，不进设置页表单、手动保存不覆盖），顶栏取色 / 切换后 600ms 防抖写 `settings/save`，启动拉 `settings` 即回填。
 - 修复：`save_plugin_config` 原先非布尔一律走 `int()` 收敛，文本型配置会被 `continue` 静默丢弃（主题色永远存不进去）；现按 `type == "string"` 分支做白名单校验后落盘。
 - 优化：首帧由 `<head>` 内联脚本置 `data-boot` 挂起，主题色与深浅色回填完成再揭幕（3s 兜底超时），消除「先见默认色、再跳成已存色」的闪变。
+- 清理：删除 `safeGet` / `safeSet` / `memoryStore` 三个本地存储封装与 `initAccentColor()`，主题色 / 深浅色不再留任何本地副本，服务端配置是唯一真相源。
 
 ## v1.2.11 — 2026-10-05
 

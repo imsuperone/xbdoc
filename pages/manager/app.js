@@ -8,27 +8,6 @@
     throw new Error("[DocMemory] api.js 未加载，请检查 index.html 的 script 顺序");
   }
 
-  // ---- Safe In-Memory Storage (Prevents Sandboxed Iframe Exceptions) ----
-  const memoryStore = {};
-  function safeGet(key, fallback = null) {
-    try {
-      if (window.localStorage) {
-        const val = window.localStorage.getItem(key);
-        return val !== null ? val : fallback;
-      }
-    } catch (e) {}
-    return memoryStore[key] !== undefined ? memoryStore[key] : fallback;
-  }
-
-  function safeSet(key, val) {
-    memoryStore[key] = val;
-    try {
-      if (window.localStorage) {
-        window.localStorage.setItem(key, val);
-      }
-    } catch (e) {}
-  }
-
   // ---- DOM Helper ----
   const $ = (id) => document.getElementById(id);
 
@@ -68,12 +47,13 @@
   let currentForcePrompt = false;
   let currentBindingFilter = "all";
 
-  // ---- Theme Handling (xbimg framework pattern, storage key stays doc_memory_theme) ----
+  // ---- Theme Handling ----
   function initTheme() {
     try {
+      // 无本地缓存可读（服务端是唯一真相源，由 applyUiPrefs() 回填）；
+      // 首帧先按系统深浅色给个合理初值，随后被服务端值覆盖。
       const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const initial = safeGet("doc_memory_theme", prefersDark ? "dark" : "light");
-      applyTheme(initial);
+      applyTheme(prefersDark ? "dark" : "light");
 
       const btn = $("themeToggleBtn");
       if (btn) {
@@ -91,8 +71,7 @@
           showToast(`当前界面已切换为${next === "dark" ? "深色" : "浅色"}模式。`);
         });
       }
-      // 取色回填交给紧随其后的 initAccentPicker() 统一做：这里若提前 applyAccentColor("")，
-      // 会在读到已存取色之前 removeItem("xbdoc_accent")，自定义色每次刷新都会被清掉。
+      // 取色回填交给紧随其后的 initAccentPicker() → applyUiPrefs()（服务端配置），不在这里动。
     } catch (e) {
       console.warn("[DocMemory] initTheme failed:", e);
     }
@@ -100,7 +79,6 @@
 
   function applyTheme(theme) {
     document.documentElement.setAttribute("data-theme", theme);
-    safeSet("doc_memory_theme", theme);
     const icon = $("themeIcon");
     if (!icon) return;
     if (theme === "dark") {
@@ -110,7 +88,7 @@
     }
   }
 
-  // ---- Accent Color Engine (ported from xbimg, storage key: xbdoc_accent) ----
+  // ---- Accent Color Engine (ported from xbimg) ----
   function mixHex(hexA, hexB, ratio) {
     const toRgb = (h) => [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16));
     const a = toRgb(hexA), b = toRgb(hexB);
@@ -160,10 +138,6 @@
         try { root.style.removeProperty(k); } catch (e) {}
       }
     }
-    try {
-      if (ok) safeSet("xbdoc_accent", v);
-      else if (window.localStorage) window.localStorage.removeItem("xbdoc_accent");
-    } catch (e) {}
     const picker = $("accentPicker");
     if (picker) {
       if (ok) {
@@ -179,14 +153,10 @@
     }
   }
 
-  function initAccentColor() {
-    let v = "";
-    try { v = safeGet("xbdoc_accent", "") || ""; } catch (e) { v = ""; }
-    applyAccentColor(v, false);
-  }
-
   function initAccentPicker() {
-    initAccentColor();
+    // 首帧把取色器对齐到当前主题的默认 primary；权威取色值由 applyUiPrefs()
+    // 从服务端回填（不读 localStorage，那里在沙箱里拿不到东西）。
+    applyAccentColor("", false);
     const picker = $("accentPicker");
     if (picker) {
       picker.addEventListener("input", () => applyAccentColor(picker.value, false));
@@ -204,7 +174,8 @@
   }
 
   // ---- UI 偏好（主题色 + 深浅色）落服务端 ----
-  // AstrBot 用沙箱 iframe 载插件页，localStorage 被禁：只存本地刷新即丢。
+  // AstrBot 用沙箱 iframe 载插件页，localStorage 不可用：本地缓存这条路走不通，
+  // 服务端配置是唯一真相源（不留任何本地副本）。
   // 与 xbimg 同款——改由 settings/save 持久化，本地记录仅作首帧快速回填。
   function revealUiPrefs() {
     try { document.documentElement.removeAttribute("data-boot"); } catch (e) {}
@@ -1554,7 +1525,7 @@
       settingsMeta = res.meta || {};
       settingsConfig = res.config || {};
       renderSettings();
-      // 服务端配置优先于本地（沙箱里 localStorage 是空的）；回填完才揭开首帧
+      // 服务端配置是唯一真相源，回填完才揭开首帧
       if (applyUiPrefs(settingsConfig)) persistUiPrefs();
     } catch (e) {
       console.error("[DocMemory] loadSettings error:", e);
