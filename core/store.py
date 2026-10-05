@@ -52,6 +52,10 @@ CONFIG_DEFAULTS: Dict[str, Any] = {
     "fallback_inject": True,
     "allow_private_bind": True,
     "perf_log": False,
+    # UI 偏好：AstrBot 用沙箱 iframe 载插件页，localStorage 被禁，
+    # 主题色/深浅色只存本地刷新即丢，必须落服务端。见下方 CONFIG_META 同名键（hidden）。
+    "ui_accent_color": "",
+    "ui_theme_mode": "",
 }
 
 # 配置项元数据：供 WebUI 设置页渲染（description/hint 与原 _conf_schema.json 对齐）
@@ -95,6 +99,20 @@ CONFIG_META: Dict[str, Dict[str, Any]] = {
         "description": "性能日志（排查回复慢）",
         "hint": "开启后每条回复记录插件耗时、注入字数与上下文规模，定位慢的原因。",
         "type": "bool",
+    },
+    # 隐藏的 UI 偏好（主题色/深浅色）：AstrBot 沙箱 iframe 禁 localStorage，必须落服务端。
+    # hidden=True → 设置页不渲染、collectSettings 不发送，因此手动保存不会覆盖这两个键。
+    "ui_accent_color": {
+        "description": "界面主题色",
+        "hint": "由顶栏取色器写入，不在设置页手工编辑。",
+        "type": "string",
+        "hidden": True,
+    },
+    "ui_theme_mode": {
+        "description": "界面深浅色",
+        "hint": "由顶栏切换按钮写入，不在设置页手工编辑。",
+        "type": "string",
+        "hidden": True,
     },
 }
 
@@ -1030,6 +1048,19 @@ class XbdocStoreMixin:
                 if isinstance(v, str):
                     v = v.strip().lower() in ("1", "true", "yes", "on")
                 cfg[k] = bool(v)
+            elif CONFIG_META.get(k, {}).get("type") == "string":
+                # 文本型配置：不走下面的 int() 收敛（int("") 抛错即 continue，主题色会永远存不进去）。
+                # 按键做白名单校验，脏值直接丢弃保留现值
+                s = str(v if v is not None else "").strip()
+                if k == "ui_accent_color":
+                    if s:
+                        body = s[1:] if s.startswith("#") else ""
+                        if len(body) != 6 or any(c not in "0123456789abcdefABCDEF" for c in body):
+                            continue
+                        s = "#" + body
+                elif k == "ui_theme_mode" and s not in ("", "light", "dark"):
+                    continue
+                cfg[k] = s
             else:
                 try:
                     iv = int(v)

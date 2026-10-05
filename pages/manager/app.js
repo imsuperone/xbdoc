@@ -81,6 +81,7 @@
           const cur = document.documentElement.getAttribute("data-theme") || "light";
           const next = cur === "dark" ? "light" : "dark";
           applyTheme(next);
+          persistUiPrefs();
           // Re-tint accent variables for the new theme (custom color or theme default)
           const picker = $("accentPicker");
           if (picker) {
@@ -189,16 +190,58 @@
     const picker = $("accentPicker");
     if (picker) {
       picker.addEventListener("input", () => applyAccentColor(picker.value, false));
-      picker.addEventListener("change", () => applyAccentColor(picker.value, false));
-      picker.addEventListener("dblclick", () => applyAccentColor("", false));
+      picker.addEventListener("change", () => { applyAccentColor(picker.value, false); persistUiPrefs(); });
+      picker.addEventListener("dblclick", () => { applyAccentColor("", false); persistUiPrefs(); });
     }
     const resetBtn = $("accentResetBtn");
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         applyAccentColor("", false);
+        persistUiPrefs();
         showToast("已恢复默认主题颜色。");
       });
     }
+  }
+
+  // ---- UI 偏好（主题色 + 深浅色）落服务端 ----
+  // AstrBot 用沙箱 iframe 载插件页，localStorage 被禁：只存本地刷新即丢。
+  // 与 xbimg 同款——改由 settings/save 持久化，本地记录仅作首帧快速回填。
+  function revealUiPrefs() {
+    try { document.documentElement.removeAttribute("data-boot"); } catch (e) {}
+  }
+
+  let _uiPrefTimer = null;
+  function persistUiPrefs() {
+    if (_uiPrefTimer) clearTimeout(_uiPrefTimer);
+    _uiPrefTimer = setTimeout(() => {
+      _uiPrefTimer = null;
+      const picker = $("accentPicker");
+      const cfg = {
+        ui_theme_mode: document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light",
+        ui_accent_color: (picker && picker.dataset.custom) ? picker.value : "",
+      };
+      // 只发这两个键：save_plugin_config 按 CONFIG_DEFAULTS 逐键合并，缺键不动，不会冲掉别的设置
+      api.post("settings/save", { config: cfg }).then((res) => {
+        if (!res || !res.config) console.warn("[DocMemory] 保存 UI 偏好失败:", res);
+      }).catch((e) => {
+        console.warn("[DocMemory] 保存 UI 偏好失败:", e);
+      });
+    }, 600);
+  }
+
+  // 返回 true = 服务端还没记过深浅色，调用方需回写一次，否则沙箱里下次刷新仍是默认
+  function applyUiPrefs(cfg) {
+    const s = (cfg && typeof cfg === "object") ? cfg : {};
+    let needSeed = false;
+    if (s.ui_theme_mode === "dark" || s.ui_theme_mode === "light") {
+      applyTheme(s.ui_theme_mode);
+    } else {
+      needSeed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(s, "ui_accent_color")) {
+      applyAccentColor(String(s.ui_accent_color || "").trim(), false);
+    }
+    return needSeed;
   }
 
   function hexToHsv(hex) {
@@ -1511,16 +1554,21 @@
       settingsMeta = res.meta || {};
       settingsConfig = res.config || {};
       renderSettings();
+      // 服务端配置优先于本地（沙箱里 localStorage 是空的）；回填完才揭开首帧
+      if (applyUiPrefs(settingsConfig)) persistUiPrefs();
     } catch (e) {
       console.error("[DocMemory] loadSettings error:", e);
       showToast("插件设置获取失败：" + e.message);
+    } finally {
+      revealUiPrefs();
     }
   }
 
   function renderSettings() {
     const container = $("settingsForm");
     if (!container) return;
-    const keys = Object.keys(settingsMeta);
+    // hidden 的 UI 偏好（主题色/深浅色）由顶栏控件维护，不进设置表单
+    const keys = Object.keys(settingsMeta).filter((k) => !(settingsMeta[k] || {}).hidden);
     if (!keys.length) {
       container.innerHTML = `<span class="helper">当前暂无可配置项。</span>`;
       return;
