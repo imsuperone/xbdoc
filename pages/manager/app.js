@@ -90,11 +90,8 @@
           showToast(`当前界面已切换为${next === "dark" ? "深色" : "浅色"}模式。`);
         });
       }
-      // Align picker with the current theme default on first paint
-      try {
-        const picker = $("accentPicker");
-        if (picker && !picker.dataset.custom) applyAccentColor("", false);
-      } catch (e) {}
+      // 取色回填交给紧随其后的 initAccentPicker() 统一做：这里若提前 applyAccentColor("")，
+      // 会在读到已存取色之前 removeItem("xbdoc_accent")，自定义色每次刷新都会被清掉。
     } catch (e) {
       console.warn("[DocMemory] initTheme failed:", e);
     }
@@ -142,27 +139,19 @@
     const root = document.documentElement;
     if (ok) {
       const dark = (root.getAttribute("data-theme") || "light") === "dark";
-      const tinted = dark ? {
+      // 只染强调系（primary / primary-container），surface 系保持主题原色，避免整页被染脏
+      const tinted = {
         "--m3-sys-color-primary": v,
-        "--m3-sys-color-primary-container": mixHex(v, "#1B2C42", 0.45),
-        "--m3-sys-color-surface": mixHex(v, "#111418", 0.12),
-        "--m3-sys-color-surface-container": mixHex(v, "#1A1F26", 0.16),
-        "--m3-sys-color-surface-container-high": mixHex(v, "#232A33", 0.16),
-        "--m3-sys-color-surface-container-highest": mixHex(v, "#2C343F", 0.16),
-      } : {
-        "--m3-sys-color-primary": v,
-        "--m3-sys-color-primary-container": mixHex(v, "#E4EAF2", 0.25),
-        "--m3-sys-color-surface": mixHex(v, "#F4F7FB", 0.08),
-        "--m3-sys-color-surface-container": mixHex(v, "#E8EDF4", 0.12),
-        "--m3-sys-color-surface-container-high": mixHex(v, "#FFFFFF", 0.12),
-        "--m3-sys-color-surface-container-highest": mixHex(v, "#DFE6EF", 0.12),
+        "--m3-sys-color-primary-container": dark ? mixHex(v, "#1B2C42", 0.45) : mixHex(v, "#E4EAF2", 0.25),
       };
       for (const k in tinted) {
         try { root.style.setProperty(k, tinted[k]); } catch (e) {}
       }
       try {
         root.style.setProperty("--m3-sys-color-on-primary", _contrastOk("#FFFFFF", v) ? "#FFFFFF" : (dark ? "#06263F" : "#1E1B16"));
-        const segBg = tinted["--m3-sys-color-surface-container-high"];
+        let segBg = "";
+        try { segBg = getComputedStyle(root).getPropertyValue("--m3-sys-color-surface-container-high").trim(); } catch (e) { segBg = ""; }
+        if (!/^#[0-9a-fA-F]{6}$/.test(segBg)) segBg = dark ? "#232A33" : "#FFFFFF";
         root.style.setProperty("--m3-seg-ink", _contrastOk(v, segBg) ? v : (dark ? "#EAE6DF" : "#1E1B16"));
       } catch (e) {}
     } else {
