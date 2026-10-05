@@ -749,8 +749,12 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
   display: none;
 }
 
+/* Toast：右下堆叠 pill（与 xbbot_beta 同款），带类型色 + 可点击复制 */
 .m3-toast {
-  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px 9px 16px;
   border-radius: var(--m3-radius-pill);
   background: var(--m3-sys-color-surface-container-highest);
   color: var(--m3-sys-color-on-surface);
@@ -760,11 +764,71 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   animation: toastIn 0.3s cubic-bezier(0.2, 0, 0, 1);
   pointer-events: auto !important;
+  max-width: min(520px, calc(100vw - 32px));
+  line-height: 1.5;
+  transition: opacity 0.28s cubic-bezier(0.4, 0, 1, 1), transform 0.28s cubic-bezier(0.4, 0, 1, 1);
 }
+.m3-toast.out {
+  animation: none;
+  opacity: 0;
+  transform: translateY(14px) scale(0.97);
+}
+.m3-toast-ic {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+.m3-toast-ic svg { display: block; width: 18px; height: 18px; }
+.m3-toast:not(.okk):not(.badk) .m3-toast-ic { color: var(--m3-sys-color-primary); }
+.m3-toast-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.m3-toast-copy {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 0.18s, background 0.18s, transform 0.18s;
+}
+.m3-toast-copy:hover { opacity: 1; background: rgba(127, 127, 127, 0.18); }
+.m3-toast-copy:active { transform: scale(0.9); }
+.m3-toast-copy.done { opacity: 1; }
+.m3-toast-copy svg { display: block; width: 16px; height: 16px; }
+.m3-toast.okk { background: var(--m3-status-green); color: #FFFFFF; border-color: transparent; }
+.m3-toast.badk { background: var(--m3-sys-color-error); color: #FFFFFF; border-color: transparent; }
+[data-theme="dark"] .m3-toast { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+[data-theme="dark"] .m3-toast.okk { background: rgba(46, 125, 50, 0.28); color: #6DD58C; border-color: #6DD58C; }
+[data-theme="dark"] .m3-toast.badk { background: var(--m3-sys-color-error-container); color: var(--m3-sys-color-error); border-color: var(--m3-sys-color-error); }
 
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    align-items: center;
+  }
+  .m3-toast {
+    max-width: calc(100vw - 32px);
+  }
 }
 
 /* ==========================================================================
@@ -1511,37 +1575,6 @@ code.mono {
   border-top: 1px solid var(--m3-sys-color-divider);
   background: var(--m3-sys-color-surface-container-high);
   flex-wrap: wrap;
-}
-
-/* ==========================================================================
-   xbdoc: Floating Snackbar (Pill Toast)
-   ========================================================================== */
-.m3-snackbar {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%) translateY(100px);
-  background: var(--m3-sys-color-on-surface);
-  color: var(--m3-sys-color-surface);
-  padding: 12px 22px;
-  border-radius: var(--m3-radius-pill);
-  font-size: 14px;
-  font-weight: 500;
-  box-shadow: var(--m3-shadow-card);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  z-index: 200;
-  opacity: 0;
-  pointer-events: none !important;
-  transition: all 0.28s cubic-bezier(0.2, 0, 0, 1);
-  max-width: 90vw;
-}
-
-.m3-snackbar.show {
-  transform: translateX(-50%) translateY(0);
-  opacity: 1;
-  pointer-events: auto !important;
 }
 
 /* ==========================================================================
