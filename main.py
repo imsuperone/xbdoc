@@ -449,16 +449,14 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 yield res
             return
 
-        # 管理员指令校验（别名同样受控，防止 /xbdoc forget 绕过 /xbdoc no 的权限）
+        # 管理员指令校验（别名同样受控，防止 /xbdoc forget 绕过 /xbdoc no 的权限）。
+        # 私聊同样校验：旧逻辑 `if _gid and ...` 在无群号时整段跳过，任意私聊用户
+        # 都能改绑定/模式/提示词；_is_admin 自带协程兼容与异常 fail-closed
         admin_subs = {"bind", "unbind", "mode", "shield", "force", "prompt_set", "prompt_clear",
                       "no", "forget", "clear_history", "重置记忆"}
         if sub in admin_subs:
-            try:
-                _gid = event.get_group_id()
-            except Exception:
-                _gid = "__unknown__"
-            if _gid and not await self._is_admin(event):
-                yield event.plain_result("⚠️ 权限不足：该指令在群聊中仅限群主或管理员使用。")
+            if not await self._is_admin(event):
+                yield event.plain_result("⚠️ 权限不足：该指令仅限管理员使用（群聊中需群主或管理员）。")
                 return
 
         no_args = {

@@ -1059,6 +1059,8 @@ class XbdocStoreMixin:
         if not isinstance(incoming, dict):
             raise ValueError("config 须为对象")
         cfg = dict(getattr(self, "config", None) or {})
+        # 记录切片参数旧值：变更时作废存量切片缓存（否则改 chunk_size 只对新上传生效）
+        old_chunk_params = (cfg.get("chunk_size"), cfg.get("chunk_overlap"))
         for k in CONFIG_DEFAULTS:
             if k not in incoming:
                 continue
@@ -1095,11 +1097,31 @@ class XbdocStoreMixin:
                     elif k == "chunk_overlap":
                         iv = max(0, iv)
                     cfg[k] = iv
+        # 切片参数有变：作废全部切片缓存，下次读取按新参数惰性重建——
+        # 否则存量文档永远停留在旧参数，WebUI 改 chunk_size 看起来“无效”
+        if (cfg.get("chunk_size"), cfg.get("chunk_overlap")) != old_chunk_params:
+            self._invalidate_chunk_caches()
         # 合并后的完整快照落盘（缺失键补默认，便于人工编辑）
         snapshot = {k: cfg.get(k, CONFIG_DEFAULTS[k]) for k in CONFIG_DEFAULTS}
         self.config = {**cfg, **snapshot}
         self._save_json(self.config_path, snapshot, indent=2)
         return dict(snapshot)
+
+    def _invalidate_chunk_caches(self) -> None:
+        """切片参数变更后作废全部切片缓存（内存 + chunks_*.json + BM25），惰性重建。"""
+        with self._save_lock:
+            self._chunk_cache.clear()
+            self._chunk_tokens_cache.clear()
+            self._fulltext_cache.clear()
+            try:
+                self._bm25_cache.clear()
+            except Exception:
+                pass
+            for p in self.data_dir.glob("chunks_*.json"):
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     # ---------- 动态配置读取（唯一来源：CONFIG_DEFAULTS + 实时 config） ----------
     def _cfg(self, key: str, default: Any = None) -> Any:

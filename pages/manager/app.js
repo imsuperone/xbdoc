@@ -698,10 +698,9 @@
         const card = badge.closest(".doc-card");
         const did = card ? card.dataset.id : "";
         if (did) {
-          try {
-            await navigator.clipboard.writeText(did);
+          if (await _copyText(did)) {
             showToast(`文档 ID 已复制：${did}`);
-          } catch {
+          } else {
             showToast(`文档 ID 为：${did}`);
           }
         }
@@ -733,6 +732,7 @@
         if (sk) sk.focus();
         showToast("已将该文档添加至绑定表单。");
       } else if (act === "delete") {
+        if (!(await uiConfirm(`确定删除文档 ${id} 吗？相关绑定将同步清理，此操作不可恢复。`, "删除确认"))) return;
         try {
           showToast(`正在删除文档（ID：${id}），请稍候……`);
           await api.post("docs/delete", { doc_id: id });
@@ -1397,10 +1397,9 @@
         const card = idBadge.closest(".binding-card");
         const sk = card ? card.dataset.key : "";
         if (sk) {
-          try {
-            await navigator.clipboard.writeText(sk);
+          if (await _copyText(sk)) {
             showToast(`会话标识已复制：${sk}`);
-          } catch {
+          } else {
             showToast(`会话标识为：${sk}`);
           }
         }
@@ -1451,6 +1450,7 @@
           showToast("会话配置已载入。");
         }
       } else if (act === "unbind") {
+        if (!(await uiConfirm(`确定解除 ${key} 的全部绑定与会话配置吗？该群提示词、模式与开关将一并重置。`, "解绑确认"))) return;
         try {
           showToast(`正在解除 ${key} 的文档绑定与相关配置，请稍候……`);
           await api.post("bindings/save", {
@@ -1579,21 +1579,10 @@
         const textEl = $("readerText");
         const text = textEl ? textEl.textContent : "";
         if (!text) return;
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(text);
-          } else {
-            const ta = document.createElement("textarea");
-            ta.value = text;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand("copy");
-            document.body.removeChild(ta);
-          }
+        // 统一走 _copyText（clipboard → execCommand 兜底），不再维护第二套回退链
+        if (await _copyText(text)) {
           showToast("切片文本已复制至剪贴板。");
-        } catch (e) {
+        } else {
           showToast("文本复制失败，请手动选取并复制。");
         }
       });
