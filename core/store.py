@@ -448,8 +448,12 @@ class XbdocStoreMixin:
         return name.encode("utf-8")[:200].decode("utf-8", errors="ignore") or "unnamed"
 
 
-    @_locked
     def add_document(self, filename: str, data: bytes) -> Dict[str, Any]:
+        """入库文档：提取/切片等慢活在锁外做，文件落盘与索引更新在锁内提交。
+
+        读路径（list_documents/_load_chunks 等）已共享 _save_lock——若在此持锁做
+        秒级的大文件提取，事件循环上的 WebUI/聊天读会被整段卡住。
+        """
         filename = self._safe_filename(filename)
         suffix = Path(filename).suffix.lower()
         if suffix not in ALLOWED_SUFFIXES:
@@ -459,7 +463,7 @@ class XbdocStoreMixin:
         if len(data) > 50 * 1024 * 1024:
             raise RuntimeError("文件超出 50MB 上限，请拆分后上传")
 
-        text = extract_text_from_bytes(suffix, data).strip()
+        text = extract_text_from_bytes(suffix, data).strip()  # 锁外：秒级慢活
 
         if len(text) < 2:
             raise RuntimeError("提取纯文本内容过少，拒绝入库")
@@ -467,46 +471,49 @@ class XbdocStoreMixin:
         text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
         doc_id = hashlib.md5(f"{filename}:{len(data)}:{text_hash}".encode("utf-8")).hexdigest()[:10]
         stored_name = f"{doc_id}_{filename}"
-        # 同 ID 旧文件残留清理（如改名重传导致文件名变化）
-        old_meta = self._index.get(doc_id)
-        if old_meta:
-            old_stored = str(old_meta.get("stored_name", ""))
-            if old_stored and old_stored != stored_name:
-                try:
-                    old_p = self.docs_dir / old_stored
-                    if old_p.exists():
-                        old_p.unlink()
-                except Exception:
-                    pass
-        self._save_bytes_atomic(self.docs_dir / stored_name, data)
-
+        # 切片参数一次性相邻取值，避免与配置保存并发时取到混合参数
         chunks = chunk_text(text, self._cfg_int("chunk_size"), self._cfg_int("chunk_overlap"))
-        meta = {
-            "doc_id": doc_id,
-            "filename": filename,
-            "stored_name": stored_name,
-            "suffix": suffix,
-            "size": len(data),
-            "text_len": len(text),
-            "chunks": len(chunks),
-            "updated_at": int(time.time()),
-        }
-        self._index[doc_id] = meta
-        self._save_bytes_atomic(
-            self.data_dir / f"chunks_{doc_id}.json",
-            json.dumps(chunks, ensure_ascii=False).encode("utf-8"),
-        )
-        self._chunk_cache[doc_id] = chunks  # 更新内存缓存
-        self._chunk_tokens_cache.pop(doc_id, None)  # 词频缓存失效，下次检索重建
-        self._fulltext_cache.pop(doc_id, None)  # 全文缓存失效
-        # BM25 全局量与绑定集合相关：任何文档变更都可能改变 idf，直接整桶清空最稳
-        try:
-            _bm25 = getattr(self, "_bm25_cache", None)
-            if isinstance(_bm25, dict):
-                _bm25.clear()
-        except Exception:
-            pass
-        self._save_json(self.index_path, self._index)
+
+        with self._save_lock:
+            # 同 ID 旧文件残留清理（如改名重传导致文件名变化）
+            old_meta = self._index.get(doc_id)
+            if old_meta:
+                old_stored = str(old_meta.get("stored_name", ""))
+                if old_stored and old_stored != stored_name:
+                    try:
+                        old_p = self.docs_dir / old_stored
+                        if old_p.exists():
+                            old_p.unlink()
+                    except Exception:
+                        pass
+            self._save_bytes_atomic(self.docs_dir / stored_name, data)
+
+            meta = {
+                "doc_id": doc_id,
+                "filename": filename,
+                "stored_name": stored_name,
+                "suffix": suffix,
+                "size": len(data),
+                "text_len": len(text),
+                "chunks": len(chunks),
+                "updated_at": int(time.time()),
+            }
+            self._index[doc_id] = meta
+            self._save_bytes_atomic(
+                self.data_dir / f"chunks_{doc_id}.json",
+                json.dumps(chunks, ensure_ascii=False).encode("utf-8"),
+            )
+            self._chunk_cache[doc_id] = chunks  # 更新内存缓存
+            self._chunk_tokens_cache.pop(doc_id, None)  # 词频缓存失效，下次检索重建
+            self._fulltext_cache.pop(doc_id, None)  # 全文缓存失效
+            # BM25 全局量与绑定集合相关：任何文档变更都可能改变 idf，直接整桶清空最稳
+            try:
+                _bm25 = getattr(self, "_bm25_cache", None)
+                if isinstance(_bm25, dict):
+                    _bm25.clear()
+            except Exception:
+                pass
+            self._save_json(self.index_path, self._index)
         logger.info(f"[{PLUGIN_NAME}] 入库文档 {filename} id={doc_id} chunks={len(chunks)}")
         return meta
 
@@ -552,17 +559,20 @@ class XbdocStoreMixin:
 
 
     def list_documents(self) -> List[Dict[str, Any]]:
-        return sorted(self._index.values(), key=lambda m: m.get("updated_at", 0), reverse=True)
+        # 读也持锁：与 add/delete 锁内改 _index 对齐，锁内取快照、锁外排序
+        with self._save_lock:
+            items = list(self._index.values())
+        return sorted(items, key=lambda m: m.get("updated_at", 0), reverse=True)
 
 
     def _load_chunks(self, doc_id: str) -> List[str]:
-        # 内存缓存命中（命中即移到队尾，变 FIFO 为 LRU，热点文档不被挤掉）
-        if doc_id in self._chunk_cache:
-            try:
-                self._chunk_cache[doc_id] = self._chunk_cache.pop(doc_id)
-            except Exception:
-                pass
-            return self._chunk_cache[doc_id]
+        # 内存缓存命中（命中即移到队尾，变 FIFO 为 LRU，热点文档不被挤掉）。
+        # 持锁做 pop+回写：旧的「先判断再下标取值」两步之间会被 delete 抽走 → KeyError
+        with self._save_lock:
+            hit = self._chunk_cache.pop(doc_id, None)
+            if hit is not None:
+                self._chunk_cache[doc_id] = hit
+                return hit
 
         cache = self.data_dir / f"chunks_{doc_id}.json"
         try:
@@ -582,8 +592,12 @@ class XbdocStoreMixin:
             raw = (self.docs_dir / str(meta["stored_name"])).read_bytes()
             text = extract_text_from_bytes(str(meta.get("suffix", "")), raw)
             chunks = chunk_text(text, self._cfg_int("chunk_size"), self._cfg_int("chunk_overlap"))
-            self._save_bytes_atomic(cache, json.dumps(chunks, ensure_ascii=False).encode("utf-8"))
-            self._remember_chunks(doc_id, chunks)
+            # 提取期间文档可能已被删除：锁内复验后才写缓存文件，防留下孤儿 chunks_*.json
+            with self._save_lock:
+                if doc_id not in self._index:
+                    return []
+                self._save_bytes_atomic(cache, json.dumps(chunks, ensure_ascii=False).encode("utf-8"))
+                self._remember_chunks(doc_id, chunks)
             return chunks
         except Exception as e:
             logger.error(f"[{PLUGIN_NAME}] 重建切片失败 {doc_id}: {e}")
@@ -592,53 +606,58 @@ class XbdocStoreMixin:
 
     def _remember_chunks(self, doc_id: str, chunks: List[str]) -> None:
         """缓存切片并做简单上限保护，防止文档过多时内存无限增长。"""
-        if len(self._chunk_cache) > 200:
-            try:
-                oldest = next(iter(self._chunk_cache))
-                self._chunk_cache.pop(oldest, None)
-                self._chunk_tokens_cache.pop(oldest, None)
-            except Exception:
-                pass
-        self._chunk_cache[doc_id] = chunks
+        with self._save_lock:
+            # 文档已删则不回填：与并发删除对齐，防把已删文档的内容写回缓存
+            if doc_id not in self._index:
+                return
+            if len(self._chunk_cache) > 200:
+                try:
+                    oldest = next(iter(self._chunk_cache))
+                    self._chunk_cache.pop(oldest, None)
+                    self._chunk_tokens_cache.pop(oldest, None)
+                except Exception:
+                    pass
+            self._chunk_cache[doc_id] = chunks
 
 
     def _get_chunk_counters(self, doc_id: str) -> List[Counter]:
         """获取每切片词频（缓存），避免每次提问重复分词全量切片。"""
-        cached = self._chunk_tokens_cache.get(doc_id)
-        if cached is not None:
-            try:
-                self._chunk_tokens_cache[doc_id] = self._chunk_tokens_cache.pop(doc_id)
-            except Exception:
-                pass
-            return self._chunk_tokens_cache[doc_id]
+        # 与 delete 的 pop 同锁：旧的 get→pop→再下标取值两步之间会被抽走 → KeyError
+        with self._save_lock:
+            cached = self._chunk_tokens_cache.pop(doc_id, None)
+            if cached is not None:
+                self._chunk_tokens_cache[doc_id] = cached
+                return cached
         chunks = self._load_chunks(doc_id)
         counters = [Counter(tokenize(ch)) for ch in chunks]
-        if len(self._chunk_tokens_cache) > 200:
-            try:
-                oldest = next(iter(self._chunk_tokens_cache))
-                self._chunk_tokens_cache.pop(oldest, None)
-            except Exception:
-                pass
-        self._chunk_tokens_cache[doc_id] = counters
+        with self._save_lock:
+            if doc_id in self._index:  # 文档已删则不回填，防删除后复活缓存
+                if len(self._chunk_tokens_cache) > 200:
+                    try:
+                        oldest = next(iter(self._chunk_tokens_cache))
+                        self._chunk_tokens_cache.pop(oldest, None)
+                    except Exception:
+                        pass
+                self._chunk_tokens_cache[doc_id] = counters
         return counters
 
 
     def _get_full_text(self, doc_id: str) -> str:
         """获取文档全文（缓存）：system/workspace 模式每消息复用，入库/删除时失效。"""
-        cached = self._fulltext_cache.get(doc_id)
-        if cached is not None:
-            try:
-                self._fulltext_cache[doc_id] = self._fulltext_cache.pop(doc_id)
-            except Exception:
-                pass
-            return self._fulltext_cache[doc_id]
+        with self._save_lock:
+            cached = self._fulltext_cache.pop(doc_id, None)
+            if cached is not None:
+                self._fulltext_cache[doc_id] = cached
+                return cached
         text = "\n".join(self._load_chunks(doc_id))
-        if len(self._fulltext_cache) > 50:
-            try:
-                self._fulltext_cache.pop(next(iter(self._fulltext_cache)))
-            except Exception:
-                pass
-        self._fulltext_cache[doc_id] = text
+        with self._save_lock:
+            if doc_id in self._index:  # 文档已删则不回填，防删除后复活缓存
+                if len(self._fulltext_cache) > 50:
+                    try:
+                        self._fulltext_cache.pop(next(iter(self._fulltext_cache)))
+                    except Exception:
+                        pass
+                self._fulltext_cache[doc_id] = text
         return text
 
 

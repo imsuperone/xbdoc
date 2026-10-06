@@ -228,6 +228,14 @@ class XbdocWebAPIMixin:
         if bad:
             return error_response(f"文档不存在: {', '.join(bad)}", status_code=400)
 
+        # mode 校验前移到任何内存改动之前：旧逻辑在锁内 bind/改 prompt 之后才校验并
+        # return——半提交（内存已改、_save_json 未跑），之后任意一次保存会把被拒的改动落盘
+        new_mode = None
+        if "mode" in payload:
+            new_mode = self._normalize_mode(payload.get("mode"))
+            if not new_mode:
+                return error_response("未知模式，可用：workspace / system / reference / none", status_code=400)
+
         # 读改写加锁：WebUI 保存与聊天指令并发时不互相覆盖
         with self._save_lock:
             # 手填老格式按 seen 补平台限定
@@ -241,11 +249,8 @@ class XbdocWebAPIMixin:
                 ent["shield"] = bool(sh) if sh is not None else False
             if "force_system_prompt" in payload:
                 ent["force_system_prompt"] = bool(payload.get("force_system_prompt"))
-            if "mode" in payload:
-                _m = self._normalize_mode(payload.get("mode"))
-                if not _m:
-                    return error_response("未知模式，可用：workspace / system / reference / none", status_code=400)
-                ent["mode"] = _m
+            if new_mode is not None:
+                ent["mode"] = new_mode
             if not valid:
                 # 未绑定任何文档时模式强制回落，与聊天指令保持一致
                 ent["mode"] = "reference"
