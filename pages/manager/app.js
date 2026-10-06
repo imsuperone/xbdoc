@@ -154,6 +154,45 @@
     arm(life);
   }
 
+  // ---- 页内确认框（沙箱 iframe 中原生 confirm 被拦截恒返回 false，危险操作必须页内确认） ----
+  function _buildConfirmOverlay(message, okText) {
+    const ov = document.createElement("div");
+    ov.className = "xb-confirm-overlay";
+    const card = document.createElement("div");
+    card.className = "xb-confirm-card";
+    const msg = document.createElement("div");
+    msg.className = "xb-confirm-msg";
+    msg.textContent = message;
+    card.appendChild(msg);
+    const actions = document.createElement("div");
+    actions.className = "xb-confirm-actions";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "m3-btn secondary-btn";
+    cancelBtn.textContent = "取消";
+    const okBtn = document.createElement("button");
+    okBtn.type = "button";
+    okBtn.className = "m3-btn primary-btn";
+    okBtn.textContent = okText;
+    actions.appendChild(cancelBtn);
+    actions.appendChild(okBtn);
+    card.appendChild(actions);
+    ov.appendChild(card);
+    return { ov, okBtn, cancelBtn };
+  }
+
+  function uiConfirm(message, okText = "确定") {
+    return new Promise((resolve) => {
+      const { ov, okBtn, cancelBtn } = _buildConfirmOverlay(message, okText);
+      const done = (v) => { try { ov.remove(); } catch (e) {} resolve(v); };
+      okBtn.addEventListener("click", () => done(true));
+      cancelBtn.addEventListener("click", () => done(false));
+      ov.addEventListener("click", (e) => { if (e.target === ov) done(false); });
+      document.body.appendChild(ov);
+      okBtn.focus();
+    });
+  }
+
   // ---- State Management ----
   let docsList = [];
   let bindingsMap = {};
@@ -1622,8 +1661,8 @@
           return;
         }
         const n = Object.keys(map).length;
-        if (!confirm(`将从备份导入 ${n} 个会话配置，并合并至现有配置，是否继续？`)) return;
-        const replace = confirm("是否覆盖现有全部配置？选择“确定”将覆盖现有配置，选择“取消”则合并至现有配置。");
+        if (!(await uiConfirm(`将从备份导入 ${n} 个会话配置，并合并至现有配置，是否继续？`, "导入确认"))) return;
+        const replace = await uiConfirm("是否覆盖现有全部配置？选择“覆盖”将替换现有配置，选择“取消”则仅合并新增项。", "覆盖现有配置");
         try {
           const res = await api.post(`bindings/import?mode=${replace ? "replace" : "merge"}`, map);
           const skipped = (res.skipped_docs || []).length;
