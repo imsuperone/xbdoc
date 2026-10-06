@@ -1,5 +1,9 @@
 # 更新日志
 
+## v1.2.17 — 2026-10-06
+
+- 工程：`tests/`（`test_plugin.py` + `test_retrieval.py`）纳入 git——此前被 `.gitignore` 排除，克隆/换机即丢失（审查发现的测试缺口）。`pack.py` 本就全局排除 `tests` 目录与 `test_*.py`，成品包内容不变。
+
 ## v1.2.16 — 2026-10-06
 
 - 修复：私聊绕过管理员——`/xbdoc bind|mode|prompt_set|shield|...` 的权限门只在有群号时校验（`if _gid and ...`），任意私聊用户都能改绑定/模式/提示词。现私聊同样走 `_is_admin`（协程兼容、异常 fail-closed），权限文案同步更新。
