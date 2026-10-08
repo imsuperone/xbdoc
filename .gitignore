@@ -5,3 +5,7 @@ __pycache__/
 *.tmp
 *.bak
 data_store/
+
+# 测试与临时件不进 GitHub（zip 已由 pack.py 排除）
+tests/
+.omo/
