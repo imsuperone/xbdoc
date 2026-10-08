@@ -6,10 +6,10 @@
 
 支持 md / txt / pdf / docx / json 文档，经 WebUI 上传后按群或私聊独立绑定；检索采用多语言分词与 BM25，纯内存计算，不依赖 Embedding 模型。
 
-本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一款开源的多平台聊天机器人框架，可接入 QQ、Telegram 等消息平台与多家大模型服务，自带 Web 管理界面，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
+本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一个松耦合、异步、支持多消息平台部署，具有易用的插件系统和完善的大语言模型（LLM）接入功能的聊天机器人及开发框架，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
 
 - 插件 ID：`astrbot_plugin_xbdoc`
-- 当前版本：`v1.2.23`
+- 当前版本：`v1.2.24`
 - 运行要求：AstrBot `>=4.16`
 - 仓库：https://github.com/imsuperone/xbdoc
 
