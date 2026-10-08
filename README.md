@@ -4,7 +4,7 @@
 
 -   📦 项目主页：[https://github.com/imsuperone/xbdoc](https://github.com/imsuperone/xbdoc)
 -   🔌 插件 ID：`astrbot_plugin_xbdoc`
--   📌 版本：`v1.2.21`，要求 AstrBot `>=4.16`
+-   📌 版本：`v1.2.22`，要求 AstrBot `>=4.16`
 
 ---
 
@@ -99,7 +99,7 @@
 -   私聊独立绑定受 `allow_private_bind` 控制（默认开启），和机器人私聊一句后即可在 WebUI 搜到并绑定。
 -   会话命名空间按 `group:平台:群号` / `private:平台:UID` 划分，跨平台同号群彻底隔离；WebUI 手填短格式（`group:123`）按 seen 自动补平台限定。
 -   `/xbdoc mode` 支持 `s / w / r / n` 快捷（system / workspace / reference / none 无），未知模式会明确报错，不再静默回落。
--   聊天端新建绑定默认 `none`（无，不注入文档），与 WebUI 表单一致；存量绑定模式不受影响，需 `/xbdoc mode` 切换才恢复注入。
+-   新建绑定默认 `none`（无，不注入文档）：聊天端、WebUI 表单、绑定条目视图与后端唯一回落 `store._effective_mode` 缺省一致；存量绑定模式不受影响，需 `/xbdoc mode` 切换才恢复注入。
 -   `force` 开启但专属提示词为空时不再清空原人格；`shield` 开启仍会清空（符合其语义）。
 -   `/xbdoc forget` 等同于 `/xbdoc no`，同样仅管理员可用。
 -   关闭 `auto_inject` 后不再自动检索文档，但专属提示词与屏蔽依然生效。
@@ -162,7 +162,7 @@ ABCD 式过度拆分，也没有空转包装层**。以下为测绘出的数据�
 | 1 | ✅ **已修 v1.2.19**：WebUI 解绑与聊天解绑语义分叉——`bindings/save` 现支持 `ignore_history`（解绑载荷显式清），聊天 `/xbdoc unbind` 留空改为按 keys 全清（无文档但有提示词/开关也恢复出厂，此前漏清） | `webapi.py` save 字段块、`app.js` 解绑载荷、`commands.py` doc_unbind 留空分支 | 回归测试 `test_unbind_semantics_web_and_prompt_only`（表单保存不动断史 / 解绑清断史并 prune / 提示词独条恢复出厂） |
 | 2 | ✅ **已修 v1.2.20**：save 回包改带与 `GET /bindings` 同源的 `entry`（prune 时 null），前端直更 `bindingsMap`→`renderBindings()` 即渲染，删「保存→丢弃→重拉」；顶层 `docs`/`platform` 无人消费字段删除 | `app.js:1246-1279`、`webapi.py:213`、`app.js:621` | save 响应即渲染，删多余字段 |
 | 3 | ✅ **已修 v1.2.20**：`bindings.json` 全部写口收归 store 唯一实现（`bind_docs_report`/`save_binding_payload`/`unbind_docs`/`set_session_prompt`/`set_session_flag`），commands 裸落盘与行级锁归零、回复出锁拼 | `_save_json(bindings_path)`：`commands.py`×8、`webapi.py`×2、`store.py`×6 | 统一经 store 方法 |
-| 4 | ✅ **已修 v1.2.20**：唯一回落 `store._effective_mode`（保存/导入/删文档/`_factory_reset`/状态读取全走），前端复写规则删除 | `app.js:1252`、`webapi.py:254,319`、`store.py:1010,551` | 只留 store 一处 |
+| 4 | ✅ **已修 v1.2.20**：唯一回落 `store._effective_mode`（保存/导入/删文档/`_factory_reset`/状态读取全走），前端复写规则删除；**v1.2.22 起缺省值 `reference`→`none`**（新建/缺 mode 条目一律不注入） | `app.js:1252`、`webapi.py:254,319`、`store.py:1010,551` | 只留 store 一处 |
 | 5 | ✅ **已修 v1.2.20**：后端归一 store 单实现；前端两处认领合并为 `claimBindingKey`（tie-break：精确键 → group → private → 任意尾段 → 保存路径纯数字补前缀），两调用点不再互相矛盾 | `store.py:665,678,707,812,848,934,873`、`app.js:992,1222` | 只留 store 一份 |
 | 6 | ✅ **已修 v1.2.20**：唯一刷新入口 `POST groups/fetch`，删主备两连 fallback；`GET /groups` 降为只读搜索（docstring 同步） | `webapi.py:651` vs `:627`、`app.js:941-945` | 合一条 |
 | 7 | ✅ **已修 v1.2.20**：base64-only 单链定案——方向列「留 multipart 一条」被实测约束否决（iframe 跨域表单对象克隆失效是实测 bug，决策记录入 `api.js` 注释），删 FormData/多前缀探测/静默 fallback，50MB 上限保留，失败细分报错 | `webapi.py:84-117`、`api.js:156-198` | 留 multipart 一条 |

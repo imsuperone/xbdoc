@@ -97,7 +97,7 @@ class XbdocCommandsMixin:
         sess = self._effective_session(event)
         ids = sess.get("doc_ids", [])
         prompt = str(sess.get("prompt") or "").strip()
-        mode = str(sess.get("mode") or "reference")
+        mode = str(sess.get("mode") or "none")
         force = bool(sess.get("force_system_prompt", False))
         return {
             "key": str(sess.get("matched_key") or "default"),

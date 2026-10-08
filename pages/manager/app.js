@@ -1108,8 +1108,8 @@
     const forceVal = entry.force_system_prompt ? "on" : "off";
     setForceChoice(forceVal);
 
-    let modeVal = "reference";
-    if (entry.mode === "system" || entry.mode === "workspace" || entry.mode === "none") {
+    let modeVal = "none";
+    if (entry.mode === "system" || entry.mode === "workspace" || entry.mode === "reference" || entry.mode === "none") {
       modeVal = entry.mode;
     }
     _applyDocMode(modeVal);
@@ -1246,7 +1246,7 @@
           prompt = curText !== storedText ? curText : storedText;
         }
         const shield = currentShield === "on";
-        // 模式只提交表单所选（审计 #4）：「无文档⇒reference」的回落只在 store._effective_mode
+        // 模式只提交表单所选（审计 #4）：「无文档⇒none」的回落只在 store._effective_mode
         // 一处（save_binding_payload 落盘前强制），前端不再复写第二份规则
         const mode = currentDocMode || "none";
         const forceSys = currentForcePrompt;
@@ -1342,7 +1342,7 @@
       const shieldClass = isShield ? "shield-badge-on" : "shield-badge-off";
       const shieldTag = isShield ? "屏蔽已开启（清空原人格）" : "屏蔽已关闭（保留原人格）";
 
-      const curMode = raw.mode === "system" ? "system" : (raw.mode === "workspace" ? "workspace" : (raw.mode === "none" ? "none" : "reference"));
+      const curMode = raw.mode === "system" ? "system" : (raw.mode === "workspace" ? "workspace" : (raw.mode === "reference" ? "reference" : "none"));
 
       // Session Name display（私聊显示昵称/私聊 UID，不与群混淆）
       const isPrivateSession = raw.kind === "private" || k.startsWith("private:");

@@ -218,7 +218,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             doc_ids = [d for d in sess.get("doc_ids", []) if d in self._index]
             has_bound = bool(doc_ids)
             shield = bool(sess.get("shield", False))
-            mode = str(sess.get("mode") or "reference").lower()
+            mode = str(sess.get("mode") or "none").lower()
             custom_prompt = str(sess.get("prompt") or "").strip()
             ignore_history = bool(sess.get("ignore_history", False))
 

@@ -547,7 +547,7 @@ class XbdocStoreMixin:
             except Exception:
                 pass
 
-            # 同步清理所有绑定引用；无有效文档的会话按唯一回落规则切 reference 并尝试删除空条目
+            # 同步清理所有绑定引用；无有效文档的会话按唯一回落规则切 none 并尝试删除空条目
             changed = False
             for key, ent in list(self._bindings.items()):
                 if doc_id in ent.get("doc_ids", []):
@@ -940,13 +940,13 @@ class XbdocStoreMixin:
 
 
     def _effective_mode(self, ent: Dict[str, Any]) -> str:
-        """生效模式：无有效绑定文档一律回落 reference —— 全插件唯一回落实现。
+        """生效模式：无有效绑定文档（或模式缺失/非法）一律回落 none —— 全插件唯一回落实现。
 
         保存 / 导入 / 删文档 / 切模式 / 状态与注入读取全部走这里，杜绝各处复制规则。
         """
         if not [d for d in ent.get("doc_ids", []) if d in self._index]:
-            return "reference"
-        return self._normalize_mode(ent.get("mode")) or "reference"
+            return "none"
+        return self._normalize_mode(ent.get("mode")) or "none"
 
 
     @staticmethod
@@ -1072,9 +1072,9 @@ class XbdocStoreMixin:
 
     @_locked
     def set_session_mode(self, session_key: str, mode: str) -> Dict[str, Any]:
-        """写生效模式（内存+落盘一体）；无文档按唯一回落规则强制 reference。"""
+        """写生效模式（内存+落盘一体）；无文档按唯一回落规则强制 none。"""
         ent = self._get_entry(session_key)
-        ent["mode"] = self._normalize_mode(mode) or "reference"
+        ent["mode"] = self._normalize_mode(mode) or "none"
         ent["mode"] = self._effective_mode(ent)
         self._save_json(self.bindings_path, self._bindings)
         return ent
@@ -1139,8 +1139,8 @@ class XbdocStoreMixin:
             ent["shield"] = False
             ent["force_system_prompt"] = False
             ent["ignore_history"] = False
-            # 恢复出厂即无有效文档：走唯一回落（_effective_mode ⇒ reference），
-            # 不再在这里复制第五份「无文档⇒reference」规则（审计 #4）
+            # 恢复出厂即无有效文档：走唯一回落（_effective_mode ⇒ none），
+            # 不再在这里复制第五份「无文档⇒回落」规则（审计 #4）
             ent["mode"] = self._effective_mode(ent)
 
         if not tokens:

@@ -177,7 +177,7 @@ class XbdocWebAPIMixin:
             "prompt": ent.get("prompt", ""),
             "shield": bool(ent.get("shield", False)),
             "force_system_prompt": bool(ent.get("force_system_prompt", False)),
-            "mode": str(ent.get("mode") or "reference"),
+            "mode": str(ent.get("mode") or "none"),
         }
 
 

@@ -1,5 +1,11 @@
 # 更新日志
 
+## v1.2.22 — 2026-10-08
+
+- 🔧 **新建绑定默认模式 `reference`→`none`（审计 #4 缺省值收齐）**：唯一回落 `store._effective_mode` 两分支（无文档 / 模式缺失非法）与聊天端新建、WebUI 表单、绑定条目视图、状态读取、防御回落（`main.py` / `commands.py` / `set_session_mode`）统一缺省 `none`——新建绑定一律不注入文档，需显式 `/xbdoc mode` 切换；存量绑定（文件加载/导入时 legacy 无 `mode`）按原样保护为 `reference`，合并优先级与 prune 放行口径不变。
+- 📚 **文档同步**：README 行为行改写（新建默认 none、四端缺省一致）、审计表 #4 标注「v1.2.22 起缺省值 reference→none」。
+- 🧪 **门禁**：`test_retrieval`/`test_plugin` 双 PASSED、compileall 0、`node --check` ×2 = 0、`pack --check` OK。未做真机回归。
+
 ## v1.2.21 — 2026-10-08
 
 - 🧹 **死代码清理（AST 全仓零引用扫描）**：删除 `core/commands.py` 未使用的 `import re`；复扫结论——130 个定义中 0 死亡（5 个候选均为框架装饰器/入口注册，保留），0 死常量、0 死导入、JS 108 个声明 0 死亡、无注释掉的代码块。
