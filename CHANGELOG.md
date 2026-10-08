@@ -1,5 +1,10 @@
 # 更新日志
 
+## v1.2.21 — 2026-10-08
+
+- 🧹 **死代码清理（AST 全仓零引用扫描）**：删除 `core/commands.py` 未使用的 `import re`；复扫结论——130 个定义中 0 死亡（5 个候选均为框架装饰器/入口注册，保留），0 死常量、0 死导入、JS 108 个声明 0 死亡、无注释掉的代码块。
+- 🧪 **门禁**：compileall 0、`test_retrieval`/`test_plugin` 双 PASSED、`node --check` ×2 = 0、`pack --check` OK。未做真机回归。
+
 ## v1.2.20 — 2026-10-08
 
 - 🔧 **绑定写口全数收归 store（审计 #3/#8）**：`bindings.json` 落盘与条目直改收敛为唯一写口（`bind_docs_report` / `save_binding_payload` / `unbind_docs` / `set_session_prompt` / `set_session_flag`），commands 侧 8 处行级锁与裸落盘归零——读判锁外、写口锁内改+落盘、回复一律出锁拼，`@_locked` 重入嵌套消失。

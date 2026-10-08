@@ -4,7 +4,6 @@
 """
 
 import hashlib
-import re
 import time
 from typing import Any, Dict, List, Optional
 
