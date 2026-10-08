@@ -1459,6 +1459,7 @@
             prompt: "",
             shield: false,
             force_system_prompt: false,
+            ignore_history: false,
             mode: "reference",
           });
           // 如果当前输入框恰好载入了该群，同步清空表单已勾选文档并禁用模式

@@ -656,6 +656,51 @@ def test_mode_log_dedup_and_switch():
     assert logged == ["msg-a", "msg-b", "msg-a"], logged
 
 
+def test_unbind_semantics_web_and_prompt_only():
+    """解绑语义统一（2026-10-08）：WebUI save 可写断史并 prune；表单保存不动断史；
+    聊天 unbind 对无文档但有提示词的会话同样恢复出厂。"""
+    import core.webapi as W
+    W.json_response = lambda d: d  # noqa: E731
+    W.error_response = lambda msg, status_code=400: {"error": msg, "status": status_code}  # noqa: E731
+
+    def _req(payload):
+        async def _json(default=None):
+            return payload
+        return SimpleNamespace(json=_json, query={})
+
+    p, _ = _make_plugin()
+    did = p.add_document("a.md", "apple".encode("utf-8"))["doc_id"]
+    key = "group:onebot:77"
+    p.bind_docs(key, [did])
+    p._bindings[key]["ignore_history"] = True
+
+    # 表单保存（不带 ignore_history 字段）→ 断史状态不被动
+    W.request = _req({"session_key": key, "doc_ids": [did], "prompt": "",
+                      "shield": False, "force_system_prompt": False, "mode": "reference"})
+    res = asyncio.run(p._api_save_binding())
+    assert res.get("ok") and p._bindings[key]["ignore_history"] is True, res
+
+    # WebUI 解绑 payload（带 ignore_history:false）→ 清断史 + 空壳被彻底删除
+    W.request = _req({"session_key": key, "doc_ids": [], "prompt": "",
+                      "shield": False, "force_system_prompt": False,
+                      "mode": "reference", "ignore_history": False})
+    res = asyncio.run(p._api_save_binding())
+    assert res.get("ok") and key not in p._bindings, (res, p._bindings)
+
+    # 聊天 unbind：无文档但有提示词 → 恢复出厂并 prune（此前漏清）
+    p._bindings["group:onebot:88"] = {"doc_ids": [], "prompt": "你是助理", "shield": False,
+                                      "force_system_prompt": False, "mode": "reference"}
+    out = asyncio.run(_collect(p.doc_unbind(
+        _fake_event(gid="88", umo="Group:88", text="/xbdoc unbind"), [])))
+    assert "group:onebot:88" not in p._bindings, p._bindings
+    assert "已清空" in out[0], out
+
+    # 聊天 unbind：毫无配置 → 保持原警告
+    out = asyncio.run(_collect(p.doc_unbind(
+        _fake_event(gid="99", umo="Group:99", text="/xbdoc unbind"), [])))
+    assert "未绑定任何文档" in out[0], out
+
+
 if __name__ == "__main__":
     test_mro()
     test_config_defaults_complete()
@@ -663,6 +708,7 @@ if __name__ == "__main__":
     test_doc_retrieve_fulltext()
     test_resolve_session()
     test_bind_status_unbind_flow()
+    test_unbind_semantics_web_and_prompt_only()
     test_private_seen_and_list()
     test_prompt_no_limit()
     test_inject_docs_splice_and_perf()

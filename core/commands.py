@@ -216,22 +216,31 @@ class XbdocCommandsMixin:
             keys = self._find_matching_keys(event)
             main_key = keys[0]
             targets = [k for k in keys if (self._bindings.get(k) or {}).get("doc_ids")]
-            if not targets:
-                msg = f"⚠️ 本群（{main_key}）当前未绑定任何文档。"
-            elif not tokens:
-                # 留空 = 清空全部（含历史重复 Key）：文档、提示词、屏蔽、强制注入、断史一并清除
-                for k in targets:
-                    ent = self._bindings.get(k) or {}
+            if not tokens:
+                # 留空 = 恢复出厂（README「解绑即恢复出厂」）：文档、提示词、屏蔽、强制注入、断史、
+                # 模式一并清除。按 keys 全清而非仅含文档的 targets——无文档但有提示词/开关的
+                # 会话同样要恢复出厂（此前漏清，与 WebUI 解绑分叉）。
+                touched = 0
+                for k in keys:
+                    ent = self._bindings.get(k)
+                    if not ent:
+                        continue
                     ent["doc_ids"] = []
                     ent["prompt"] = ""
                     ent["shield"] = False
                     ent["force_system_prompt"] = False
                     ent["ignore_history"] = False
                     ent["mode"] = "reference"
-                pruned = sum(1 for k in targets if self._prune_empty_entry(k))
+                    if self._prune_empty_entry(k):
+                        touched += 1
                 self._save_json(self.bindings_path, self._bindings)
-                tail = "相关配置已彻底移除。" if pruned else "已回到默认配置。"
-                msg = f"✅ 已清空本群（{main_key}）的所有文档绑定，专属提示词、屏蔽与强制注入已一并清除。{tail}"
+                if not touched and not targets:
+                    msg = f"⚠️ 本群（{main_key}）当前未绑定任何文档。"
+                else:
+                    tail = "相关配置已彻底移除。" if touched else "已回到默认配置。"
+                    msg = f"✅ 已清空本群（{main_key}）的所有文档绑定，专属提示词、屏蔽与强制注入已一并清除。{tail}"
+            elif not targets:
+                msg = f"⚠️ 本群（{main_key}）当前未绑定任何文档。"
             else:
                 removed: List[str] = []
                 not_found: List[str] = []

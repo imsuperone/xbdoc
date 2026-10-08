@@ -249,6 +249,9 @@ class XbdocWebAPIMixin:
                 ent["shield"] = bool(sh) if sh is not None else False
             if "force_system_prompt" in payload:
                 ent["force_system_prompt"] = bool(payload.get("force_system_prompt"))
+            if "ignore_history" in payload:
+                # 断史开关是解绑语义的一部分：WebUI 解绑显式传 false 才能过 prune（与聊天解绑一致）
+                ent["ignore_history"] = bool(payload.get("ignore_history"))
             if new_mode is not None:
                 ent["mode"] = new_mode
             if not valid:
@@ -259,13 +262,15 @@ class XbdocWebAPIMixin:
             self._save_json(self.bindings_path, self._bindings)
             # prune 可能已删除空条目，此时用孤儿 ent 回包会与实际落盘不一致，需重取
             ent = self._bindings.get(key) or {
-                "prompt": "", "shield": False, "force_system_prompt": False, "mode": "reference",
+                "prompt": "", "shield": False, "force_system_prompt": False,
+                "ignore_history": False, "mode": "reference",
             }
             resp = {
                 "ok": True, "session_key": key, "doc_ids": valid,
                 "prompt": ent.get("prompt", ""),
                 "shield": ent.get("shield", False),
                 "force_system_prompt": ent.get("force_system_prompt", False),
+                "ignore_history": bool(ent.get("ignore_history", False)),
                 "mode": ent.get("mode", "reference"),
             }
         return json_response(resp)

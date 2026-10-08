@@ -4,7 +4,7 @@
 
 -   📦 项目主页：[https://github.com/imsuperone/xbdoc](https://github.com/imsuperone/xbdoc)
 -   🔌 插件 ID：`astrbot_plugin_xbdoc`
--   📌 版本：`v1.2.18`，要求 AstrBot `>=4.16`
+-   📌 版本：`v1.2.19`，要求 AstrBot `>=4.16`
 
 ---
 
@@ -159,7 +159,7 @@ ABCD 式过度拆分，也没有空转包装层**。以下为测绘出的数据�
 
 | # | 事实 | 位置 | 收敛 |
 | --- | --- | --- | --- |
-| 1 | **WebUI 解绑与聊天解绑语义不一致**（唯一正确性级问题）：聊天清 `ignore_history`，WebUI 不清 → `/xbdoc no` 过的会话经 WebUI 解绑后剩空壳，与「解绑即恢复出厂」矛盾 | 清：`commands.py:229`；不清：`app.js:1456-1463`、`webapi.py:245-253`；prune 依赖：`store.py:990` | 服务端 `_api_save_binding` 统一清 |
+| 1 | ✅ **已修 v1.2.19**：WebUI 解绑与聊天解绑语义分叉——`bindings/save` 现支持 `ignore_history`（解绑载荷显式清），聊天 `/xbdoc unbind` 留空改为按 keys 全清（无文档但有提示词/开关也恢复出厂，此前漏清） | `webapi.py` save 字段块、`app.js` 解绑载荷、`commands.py` doc_unbind 留空分支 | 回归测试 `test_unbind_semantics_web_and_prompt_only`（表单保存不动断史 / 解绑清断史并 prune / 提示词独条恢复出厂） |
 | 2 | 保存→丢弃→重拉：`bindings/save` 返回完整条目客户端不用，立刻重取；`GET /bindings` 还算了无人消费的 `docs`（含 `list_documents()` 全量加锁排序） | `app.js:1264-1268`、`webapi.py:213`、`app.js:621` | save 响应即渲染，删多余字段 |
 | 3 | 绑定写口不统一：`bindings.json` 落盘 16 处（10 处在 store 外）、条目直改 28 处 | `_save_json(bindings_path)`：`commands.py`×8、`webapi.py`×2、`store.py`×6 | 统一经 store 方法 |
 | 4 | 「无文档 ⇒ 模式回落 reference」规则写 5 处 | `app.js:1252`、`webapi.py:254,319`、`store.py:1010,551` | 只留 store 一处 |
