@@ -6,6 +6,9 @@ __pycache__/
 *.bak
 data_store/
 
+# AI 内部文档只入本地，不推 GitHub
+aidocs/
+
 # 测试与临时件不进 GitHub（zip 已由 pack.py 排除）
 tests/
 .omo/
