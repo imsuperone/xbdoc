@@ -140,6 +140,11 @@ class XbdocStoreMixin:
         # 锁与缓存必须先就绪：后续 _save_json/_load_chunks 依赖它们
         # RLock：读改写关键区（bind/unbind/入库）可与内部的 _save_json 嵌套加锁，不死锁
         self._save_lock = threading.RLock()  # 落盘+绑定锁：防 WebUI 与聊天指令并发写撕裂
+        # 细锁：只护四个缓存字典的 LRU 触达/回填，注入与检索热路径不再抢全局 _save_lock。
+        # 锁序恒为 _save_lock → _cache_lock（写路径先全局后细锁），反向永不发生，故不死锁
+        self._cache_lock = threading.RLock()
+        # 字节流写盘互斥：与状态锁解耦（字节入参不可变，写盘期间无需护内存态）
+        self._io_lock = threading.Lock()
         # 专用线程池：上传入库等重活不占默认 executor；提交空任务预热线程，首传免 spawn 延迟
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="xbdoc")
         try:
@@ -278,8 +283,12 @@ class XbdocStoreMixin:
 
 
     def _save_bytes_atomic(self, path: Path, data: bytes) -> None:
-        """二进制原子写（切片缓存/入库原文件），与 _save_json 同策略。"""
-        with self._save_lock:
+        """二进制原子写（切片缓存/入库原文件）：只持 _io_lock，不占状态锁——
+
+        写盘是可并行的慢活，护住 _save_lock 会把读路径整段卡住；字节入参不可变，
+        同路径写者由 _io_lock 互斥，os.replace 原子可见。
+        """
+        with self._io_lock:
             tmp = path.with_name(f"{path.name}.tmp")
             tmp.write_bytes(data)
             os.replace(tmp, path)
@@ -375,7 +384,7 @@ class XbdocStoreMixin:
             ent = self._seen_groups.setdefault(seen_key, {
                 "gid": gid, "group_name": group_name, "platform": platform,
                 "kind": "group",
-                "first_seen": now, "last_seen": now, "msg_count": 0,
+                "last_seen": now, "msg_count": 0,
             })
             ent["last_seen"] = now
             ent["msg_count"] = int(ent.get("msg_count", 0)) + 1
@@ -422,7 +431,7 @@ class XbdocStoreMixin:
             ent = self._seen_groups.setdefault(key, {
                 "gid": uid, "group_name": nickname, "platform": platform,
                 "kind": "private",
-                "first_seen": now, "last_seen": now, "msg_count": 0,
+                "last_seen": now, "msg_count": 0,
             })
             ent["kind"] = "private"
             ent["last_seen"] = now
@@ -449,10 +458,10 @@ class XbdocStoreMixin:
 
 
     def add_document(self, filename: str, data: bytes) -> Dict[str, Any]:
-        """入库文档：提取/切片等慢活在锁外做，文件落盘与索引更新在锁内提交。
+        """入库文档：提取/切片/写盘等慢活在锁外做，锁只护 _index 与缓存的状态改写。
 
-        读路径（list_documents/_load_chunks 等）已共享 _save_lock——若在此持锁做
-        秒级的大文件提取，事件循环上的 WebUI/聊天读会被整段卡住。
+        读路径（list_documents/_load_chunks 等）共享 _save_lock——若在锁内做
+        秒级的大文件提取或几十 MB 的写盘，事件循环上的 WebUI/聊天读会被整段卡住。
         """
         filename = self._safe_filename(filename)
         suffix = Path(filename).suffix.lower()
@@ -473,39 +482,31 @@ class XbdocStoreMixin:
         stored_name = f"{doc_id}_{filename}"
         # 切片参数一次性相邻取值，避免与配置保存并发时取到混合参数
         chunks = chunk_text(text, self._cfg_int("chunk_size"), self._cfg_int("chunk_overlap"))
+        meta = {
+            "doc_id": doc_id,
+            "filename": filename,
+            "stored_name": stored_name,
+            "suffix": suffix,
+            "text_len": len(text),
+            "chunks": len(chunks),
+            "updated_at": int(time.time()),
+        }
+        # 只读取旧文件名（_index 字典读取原子），供下面锁外清理残留用
+        old_stored = str((self._index.get(doc_id) or {}).get("stored_name", ""))
+
+        # 锁外磁盘写：新原文件与切片缓存先落盘，读者最坏看到的是「文件已就位、索引未发布」
+        self._save_bytes_atomic(self.docs_dir / stored_name, data)
+        self._save_bytes_atomic(
+            self.data_dir / f"chunks_{doc_id}.json",
+            json.dumps(chunks, ensure_ascii=False).encode("utf-8"),
+        )
 
         with self._save_lock:
-            # 同 ID 旧文件残留清理（如改名重传导致文件名变化）
-            old_meta = self._index.get(doc_id)
-            if old_meta:
-                old_stored = str(old_meta.get("stored_name", ""))
-                if old_stored and old_stored != stored_name:
-                    try:
-                        old_p = self.docs_dir / old_stored
-                        if old_p.exists():
-                            old_p.unlink()
-                    except Exception:
-                        pass
-            self._save_bytes_atomic(self.docs_dir / stored_name, data)
-
-            meta = {
-                "doc_id": doc_id,
-                "filename": filename,
-                "stored_name": stored_name,
-                "suffix": suffix,
-                "size": len(data),
-                "text_len": len(text),
-                "chunks": len(chunks),
-                "updated_at": int(time.time()),
-            }
             self._index[doc_id] = meta
-            self._save_bytes_atomic(
-                self.data_dir / f"chunks_{doc_id}.json",
-                json.dumps(chunks, ensure_ascii=False).encode("utf-8"),
-            )
-            self._chunk_cache[doc_id] = chunks  # 更新内存缓存
-            self._chunk_tokens_cache.pop(doc_id, None)  # 词频缓存失效，下次检索重建
-            self._fulltext_cache.pop(doc_id, None)  # 全文缓存失效
+            with self._cache_lock:
+                self._chunk_cache[doc_id] = chunks  # 更新内存缓存
+                self._chunk_tokens_cache.pop(doc_id, None)  # 词频缓存失效，下次检索重建
+                self._fulltext_cache.pop(doc_id, None)  # 全文缓存失效
             # BM25 全局量与绑定集合相关：任何文档变更都可能改变 idf，直接整桶清空最稳
             try:
                 _bm25 = getattr(self, "_bm25_cache", None)
@@ -513,17 +514,53 @@ class XbdocStoreMixin:
                     _bm25.clear()
             except Exception:
                 pass
-            self._save_json(self.index_path, self._index)
+            self._save_json(self.index_path, self._index)  # 小 JSON，锁内落盘
+
+        # 锁外：删同 ID 旧文件（索引已切换到新文件，读者不再需要它）
+        if old_stored and old_stored != stored_name:
+            try:
+                old_p = self.docs_dir / old_stored
+                if old_p.exists():
+                    old_p.unlink()
+            except Exception:
+                pass
         logger.info(f"[{PLUGIN_NAME}] 入库文档 {filename} id={doc_id} chunks={len(chunks)}")
         return meta
 
 
-    @_locked
     def delete_document(self, doc_id: str) -> bool:
-        meta = self._index.pop(doc_id, None)
-        if not meta:
-            return False
-        stored = str(meta.get("stored_name", ""))
+        """删文档：锁只护 _index/缓存/绑定的状态改写与小 JSON 落盘，磁盘 unlink 出锁。"""
+        stored = ""
+        with self._save_lock:
+            meta = self._index.pop(doc_id, None)
+            if not meta:
+                return False
+            stored = str(meta.get("stored_name", ""))
+            with self._cache_lock:  # 清除内存缓存（与 _cache_touch 同锁，命中触达不抢全局锁）
+                self._chunk_cache.pop(doc_id, None)
+                self._chunk_tokens_cache.pop(doc_id, None)
+                self._fulltext_cache.pop(doc_id, None)
+            try:
+                _bm25 = getattr(self, "_bm25_cache", None)
+                if isinstance(_bm25, dict):
+                    _bm25.clear()
+            except Exception:
+                pass
+
+            # 同步清理所有绑定引用；无有效文档的会话按唯一回落规则切 reference 并尝试删除空条目
+            changed = False
+            for key, ent in list(self._bindings.items()):
+                if doc_id in ent.get("doc_ids", []):
+                    ent["doc_ids"] = [i for i in ent["doc_ids"] if i != doc_id]
+                    ent["mode"] = self._effective_mode(ent)
+                    self._prune_empty_entry(key)
+                    changed = True
+            self._save_json(self.index_path, self._index)
+            if changed:
+                self._save_json(self.bindings_path, self._bindings)
+
+        # 锁外磁盘清理：索引已摘除（_load_chunks 按 _index 复验），读者不再需要这两个文件；
+        # 慢 I/O 不占状态锁（审计 #12「锁内只护内存态，磁盘 I/O 出锁」）
         targets = [self.data_dir / f"chunks_{doc_id}.json"]
         if stored:
             targets.insert(0, self.docs_dir / stored)
@@ -533,28 +570,6 @@ class XbdocStoreMixin:
                     p.unlink()
             except Exception:
                 pass
-        self._chunk_cache.pop(doc_id, None)  # 清除内存缓存
-        self._chunk_tokens_cache.pop(doc_id, None)
-        self._fulltext_cache.pop(doc_id, None)
-        try:
-            _bm25 = getattr(self, "_bm25_cache", None)
-            if isinstance(_bm25, dict):
-                _bm25.clear()
-        except Exception:
-            pass
-
-        # 同步清理所有绑定引用；被清空的会话回落模式并尝试删除空条目
-        changed = False
-        for key, ent in list(self._bindings.items()):
-            if doc_id in ent.get("doc_ids", []):
-                ent["doc_ids"] = [i for i in ent["doc_ids"] if i != doc_id]
-                if not ent["doc_ids"] and str(ent.get("mode") or "") in ("system", "workspace"):
-                    ent["mode"] = "reference"
-                self._prune_empty_entry(key)
-                changed = True
-        self._save_json(self.index_path, self._index)
-        if changed:
-            self._save_json(self.bindings_path, self._bindings)
         return True
 
 
@@ -565,14 +580,30 @@ class XbdocStoreMixin:
         return sorted(items, key=lambda m: m.get("updated_at", 0), reverse=True)
 
 
+    def _cache_touch(self, cache: Dict[str, Any], doc_id: str) -> Optional[Any]:
+        """LRU 触达：命中即移到队尾并返回，未命中或文档已删返回 None。
+
+        只持 _cache_lock（注入/检索热路径不再抢全局 _save_lock）：字典 pop/回写原子，
+        写后复验 _index —— 与并发删除（先删索引再弹缓存）的任意时序交错都会回滚收敛，
+        不会把已删文档的内容留在缓存里。
+        """
+        with self._cache_lock:
+            val = cache.pop(doc_id, None)
+            if val is None:
+                return None
+            cache[doc_id] = val
+            if doc_id not in self._index:
+                cache.pop(doc_id, None)  # 写后复验：删除已发生，回滚
+                return None
+            return val
+
+
     def _load_chunks(self, doc_id: str) -> List[str]:
-        # 内存缓存命中（命中即移到队尾，变 FIFO 为 LRU，热点文档不被挤掉）。
-        # 持锁做 pop+回写：旧的「先判断再下标取值」两步之间会被 delete 抽走 → KeyError
-        with self._save_lock:
-            hit = self._chunk_cache.pop(doc_id, None)
-            if hit is not None:
-                self._chunk_cache[doc_id] = hit
-                return hit
+        # 内存缓存命中（命中即移到队尾，变 FIFO 为 LRU，热点文档不被挤掉）；
+        # 热路径只取细锁 _cache_lock，与落盘写家互不阻塞
+        hit = self._cache_touch(self._chunk_cache, doc_id)
+        if hit is not None:
+            return hit
 
         cache = self.data_dir / f"chunks_{doc_id}.json"
         try:
@@ -606,10 +637,7 @@ class XbdocStoreMixin:
 
     def _remember_chunks(self, doc_id: str, chunks: List[str]) -> None:
         """缓存切片并做简单上限保护，防止文档过多时内存无限增长。"""
-        with self._save_lock:
-            # 文档已删则不回填：与并发删除对齐，防把已删文档的内容写回缓存
-            if doc_id not in self._index:
-                return
+        with self._cache_lock:
             if len(self._chunk_cache) > 200:
                 try:
                     oldest = next(iter(self._chunk_cache))
@@ -618,46 +646,46 @@ class XbdocStoreMixin:
                 except Exception:
                     pass
             self._chunk_cache[doc_id] = chunks
+            if doc_id not in self._index:
+                # 写后复验：与并发删除（先删索引再弹缓存）任意交错都会回滚，不复活已删内容
+                self._chunk_cache.pop(doc_id, None)
 
 
     def _get_chunk_counters(self, doc_id: str) -> List[Counter]:
         """获取每切片词频（缓存），避免每次提问重复分词全量切片。"""
-        # 与 delete 的 pop 同锁：旧的 get→pop→再下标取值两步之间会被抽走 → KeyError
-        with self._save_lock:
-            cached = self._chunk_tokens_cache.pop(doc_id, None)
-            if cached is not None:
-                self._chunk_tokens_cache[doc_id] = cached
-                return cached
+        cached = self._cache_touch(self._chunk_tokens_cache, doc_id)
+        if cached is not None:
+            return cached
         chunks = self._load_chunks(doc_id)
         counters = [Counter(tokenize(ch)) for ch in chunks]
-        with self._save_lock:
-            if doc_id in self._index:  # 文档已删则不回填，防删除后复活缓存
-                if len(self._chunk_tokens_cache) > 200:
-                    try:
-                        oldest = next(iter(self._chunk_tokens_cache))
-                        self._chunk_tokens_cache.pop(oldest, None)
-                    except Exception:
-                        pass
-                self._chunk_tokens_cache[doc_id] = counters
+        with self._cache_lock:
+            if len(self._chunk_tokens_cache) > 200:
+                try:
+                    oldest = next(iter(self._chunk_tokens_cache))
+                    self._chunk_tokens_cache.pop(oldest, None)
+                except Exception:
+                    pass
+            self._chunk_tokens_cache[doc_id] = counters
+            if doc_id not in self._index:  # 写后复验：文档已删则回滚，防删除后复活缓存
+                self._chunk_tokens_cache.pop(doc_id, None)
         return counters
 
 
     def _get_full_text(self, doc_id: str) -> str:
         """获取文档全文（缓存）：system/workspace 模式每消息复用，入库/删除时失效。"""
-        with self._save_lock:
-            cached = self._fulltext_cache.pop(doc_id, None)
-            if cached is not None:
-                self._fulltext_cache[doc_id] = cached
-                return cached
+        cached = self._cache_touch(self._fulltext_cache, doc_id)
+        if cached is not None:
+            return cached
         text = "\n".join(self._load_chunks(doc_id))
-        with self._save_lock:
-            if doc_id in self._index:  # 文档已删则不回填，防删除后复活缓存
-                if len(self._fulltext_cache) > 50:
-                    try:
-                        self._fulltext_cache.pop(next(iter(self._fulltext_cache)))
-                    except Exception:
-                        pass
-                self._fulltext_cache[doc_id] = text
+        with self._cache_lock:
+            if len(self._fulltext_cache) > 50:
+                try:
+                    self._fulltext_cache.pop(next(iter(self._fulltext_cache)))
+                except Exception:
+                    pass
+            self._fulltext_cache[doc_id] = text
+            if doc_id not in self._index:  # 写后复验：文档已删则回滚，防删除后复活缓存
+                self._fulltext_cache.pop(doc_id, None)
         return text
 
 
@@ -874,22 +902,16 @@ class XbdocStoreMixin:
         """全插件统一会话解析：canonical 优先命中，其次兼容历史脏 key。
 
         返回 (matched_key, entry)。create=False 时未命中返回 {} 且绝不写 bindings，
-        调用方拿到的 key 即真正生效的 key，不再各算一遍。
+        调用方拿到的 key 即真正生效的 key，不再各算一遍；候选表只来自 _session_keys
+        （其内部即 _canonical_key_str 单实现归一），此处不再自算第二份。
         """
         if isinstance(event_or_key, str):
             cands = [event_or_key]
         else:
             try:
-                primary = self._canonical_key(event_or_key)
+                cands = self._session_keys(event_or_key) or ["default"]
             except Exception:
-                primary = "default"
-            cands = [primary]
-            try:
-                for k in self._session_keys(event_or_key):
-                    if k not in cands:
-                        cands.append(k)
-            except Exception:
-                pass
+                cands = ["default"]
         for k in cands:
             ck = self._canonical_key_str(k)
             if ck and ck in self._bindings:
@@ -917,6 +939,16 @@ class XbdocStoreMixin:
         return ""
 
 
+    def _effective_mode(self, ent: Dict[str, Any]) -> str:
+        """生效模式：无有效绑定文档一律回落 reference —— 全插件唯一回落实现。
+
+        保存 / 导入 / 删文档 / 切模式 / 状态与注入读取全部走这里，杜绝各处复制规则。
+        """
+        if not [d for d in ent.get("doc_ids", []) if d in self._index]:
+            return "reference"
+        return self._normalize_mode(ent.get("mode")) or "reference"
+
+
     @staticmethod
     def _parse_doc_ids(*parts: str) -> List[str]:
         """解析文档 ID：兼容空格/逗号/分号分隔，自动去重保序。"""
@@ -932,15 +964,25 @@ class XbdocStoreMixin:
 
 
     def _find_matching_keys(self, event: AstrMessageEvent) -> List[str]:
-        """找到本会话所有命中的绑定 Key（解决新旧 Key 并存导致解绑遗漏）。"""
-        keys = []
+        """找到本会话所有命中的绑定 Key（解决新旧 Key 并存导致解绑遗漏）。
+
+        候选表只取一次 _session_keys（归一走 _canonical_key_str 单实现），
+        命中者在前、canonical 兜底在后，不再重复算第二遍 canonical。
+        """
+        keys: List[str] = []
+        primary = ""
         for k in self._session_keys(event):
             ck = self._canonical_key_str(k)
+            if not ck:
+                continue
+            if not primary:
+                primary = ck
             if ck in self._bindings and ck not in keys:
                 keys.append(ck)
-        ck = self._canonical_key(event)
-        if ck not in keys:
-            keys.append(ck)
+        if primary and primary not in keys:
+            keys.append(primary)
+        if not keys:  # 全部候选归一为空的病态兜底：与 _resolve_session 的 default 口径一致
+            keys.append("default")
         return keys
 
 
@@ -957,20 +999,42 @@ class XbdocStoreMixin:
             "doc_ids": doc_ids,
             "prompt": str(ent.get("prompt") or "").strip(),
             "shield": bool(ent.get("shield", False)),
-            "mode": str(ent.get("mode") or "reference"),
+            "mode": self._effective_mode(ent),
             "force_system_prompt": bool(ent.get("force_system_prompt", False)),
             "ignore_history": bool(ent.get("ignore_history", False)),
             "matched_key": key,
-            "has_entry": bool(ent),
         }
 
 
     @_locked
     def bind_docs(self, session_key: str, doc_ids: List[str]) -> List[str]:
-        """只改内存不落盘，调用方统一 save（避免一次绑定写两次文件）。"""
+        """写入会话文档绑定：改内存 + 落盘一体（本插件唯一条目文档写口）。"""
         valid = [d for d in doc_ids if d in self._index]
         self._get_entry(session_key)["doc_ids"] = valid
+        self._save_json(self.bindings_path, self._bindings)
         return valid
+
+
+    @_locked
+    def bind_docs_report(self, event_or_key: Any, doc_ids: List[str]) -> Dict[str, Any]:
+        """聊天 bind 的带锁 RMW 写口：锁内算 existed/added/dup 并复用 bind_docs 落盘。
+
+        把回复所需的快照（key/added/dup/total/mode）一次性带回，调用方出锁后再拼消息，
+        handler 不再自己持锁读改写 bindings + 二次 _save_json（审计 #3/#8）。
+        """
+        key, _ = self._resolve_session(event_or_key, create=False)
+        existed = [d for d in (self._bindings.get(key) or {}).get("doc_ids", []) if d in self._index]
+        added = [i for i in doc_ids if i not in existed]
+        dup = [i for i in doc_ids if i in existed]
+        self.bind_docs(key, existed + added)  # 唯一写口（RLock 可重入），内部落盘
+        ent = self._bindings.get(key) or {}
+        return {
+            "key": key,
+            "added": added,
+            "dup": dup,
+            "total": len(existed) + len(added),
+            "mode": self._effective_mode(ent),
+        }
 
 
     def _prune_empty_entry(self, session_key: str) -> bool:
@@ -997,23 +1061,175 @@ class XbdocStoreMixin:
 
     @_locked
     def set_session_prompt(self, session_key: str, prompt: str) -> Dict[str, Any]:
+        """写专属提示词（内存+落盘一体）；清空后空壳随之 prune。"""
         ent = self._get_entry(session_key)
         ent["prompt"] = (prompt or "").strip()
+        ck = self._canonical_key_str(session_key)
+        self._prune_empty_entry(ck)
+        self._save_json(self.bindings_path, self._bindings)
+        return self._bindings.get(ck) or {}
+
+
+    @_locked
+    def set_session_mode(self, session_key: str, mode: str) -> Dict[str, Any]:
+        """写生效模式（内存+落盘一体）；无文档按唯一回落规则强制 reference。"""
+        ent = self._get_entry(session_key)
+        ent["mode"] = self._normalize_mode(mode) or "reference"
+        ent["mode"] = self._effective_mode(ent)
         self._save_json(self.bindings_path, self._bindings)
         return ent
 
 
     @_locked
-    def set_session_mode(self, session_key: str, mode: str) -> Dict[str, Any]:
-        # 文档生效模式必须有绑定文档才能切换，无文档时强制回落 reference
+    def set_session_flag(self, session_key: str, field: str, value: bool) -> Dict[str, Any]:
+        """写会话开关（shield / force_system_prompt / ignore_history）并落盘，空壳随之 prune。
+
+        三个开关共用这一条写口，聊天指令不再各自改 dict 再手动 save。
+        """
         ent = self._get_entry(session_key)
-        if not [d for d in ent.get("doc_ids", []) if d in self._index]:
-            ent["mode"] = "reference"
-            self._save_json(self.bindings_path, self._bindings)
-            return ent
-        ent["mode"] = self._normalize_mode(mode) or "reference"
+        ent[field] = bool(value)
+        ck = self._canonical_key_str(session_key)
+        self._prune_empty_entry(ck)
         self._save_json(self.bindings_path, self._bindings)
         return ent
+
+
+    @_locked
+    def save_binding_payload(
+        self,
+        session_key: str,
+        doc_ids: List[str],
+        fields: Dict[str, Any],
+    ) -> Tuple[str, Dict[str, Any], List[str]]:
+        """WebUI 保存绑定的唯一写口（改内存+落盘一体）：key 归一补平台限定 → 写条目 →
+        无文档按唯一规则回落 mode → prune → 落盘，返回 (生效 key, 条目, 有效 doc_ids)。
+
+        fields 只含调用方显式给出的键（mode 已由 Web 层校验归一）；空壳被 prune 时条目返回 {}。
+        """
+        key = self._qualify_session_key(self._canonical_key_str(session_key))
+        valid = [d for d in doc_ids if d in self._index]
+        ent = self._get_entry(key)
+        for f, v in fields.items():
+            ent[f] = v
+        ent["doc_ids"] = valid
+        ent["mode"] = self._effective_mode(ent)
+        self._prune_empty_entry(key)
+        self._save_json(self.bindings_path, self._bindings)
+        return key, self._bindings.get(key) or {}, valid
+
+
+    @_locked
+    def unbind_docs(self, event: AstrMessageEvent, tokens: List[str]) -> Dict[str, Any]:
+        """解绑本会话文档（内存+落盘一体），返回回复所需状态（拼回复在锁外做）。
+
+        tokens 空 = 恢复出厂：按命中 keys 全清（文档、提示词、屏蔽、强制、断史、模式）；
+        非空 = 从含文档条目移除指定文档，移完无文档则一并恢复出厂。
+        """
+        keys = self._find_matching_keys(event)
+        main_key = keys[0]
+        targets = [k for k in keys if (self._bindings.get(k) or {}).get("doc_ids")]
+        touched = 0
+        removed: List[str] = []
+        not_found: List[str] = []
+        remaining = 0
+
+        def _factory_reset(ent: Dict[str, Any]) -> None:
+            ent["doc_ids"] = []
+            ent["prompt"] = ""
+            ent["shield"] = False
+            ent["force_system_prompt"] = False
+            ent["ignore_history"] = False
+            # 恢复出厂即无有效文档：走唯一回落（_effective_mode ⇒ reference），
+            # 不再在这里复制第五份「无文档⇒reference」规则（审计 #4）
+            ent["mode"] = self._effective_mode(ent)
+
+        if not tokens:
+            # 留空 = 恢复出厂（README「解绑即恢复出厂」）：按 keys 全清而非仅含文档的
+            # targets——无文档但有提示词/开关的会话同样要恢复出厂。
+            for k in keys:
+                ent = self._bindings.get(k)
+                if not ent:
+                    continue
+                _factory_reset(ent)
+                if self._prune_empty_entry(k):
+                    touched += 1
+        elif targets:
+            for t in tokens:
+                hit = False
+                for k in targets:
+                    ent = self._bindings.get(k) or {}
+                    if t in ent.get("doc_ids", []):
+                        ent["doc_ids"] = [d for d in ent["doc_ids"] if d != t]
+                        hit = True
+                (removed if hit else not_found).append(t)
+            # 若解绑后已无文档，视为彻底解绑：提示词/屏蔽/强制/断史一并清除
+            remaining = sum(len((self._bindings.get(k) or {}).get("doc_ids", [])) for k in targets)
+            if remaining == 0:
+                for k in targets:
+                    _factory_reset(self._bindings.get(k) or {})
+                for k in targets:
+                    self._prune_empty_entry(k)
+
+        self._save_json(self.bindings_path, self._bindings)
+        return {
+            "key": main_key,
+            "targets": len(targets),
+            "touched": touched,
+            "removed": removed,
+            "not_found": not_found,
+            "remaining": remaining,
+        }
+
+
+    @_locked
+    def import_bindings(self, payload: Dict[str, Any], mode: str) -> Dict[str, Any]:
+        """导入绑定备份（内存+落盘一体）：body 即导出的原样 map；merge 合并 / replace 覆盖。
+
+        不存在的文档 id 自动跳过并回告；非法条目跳过；空壳不落盘；mode 统一走唯一回落。
+        """
+        applied, skipped_docs, skipped_keys = 0, [], []
+        if mode == "replace":
+            self._bindings = {}
+        for k, v in payload.items():
+            if not isinstance(v, dict):
+                skipped_keys.append(str(k))
+                continue
+            ck = self._canonical_key_str(str(k))
+            if not ck:
+                skipped_keys.append(str(k))
+                continue
+            raw_ids = v.get("doc_ids") or []
+            if not isinstance(raw_ids, list):
+                raw_ids = []
+            docs = [str(d).strip() for d in raw_ids if str(d).strip()]
+            kept = [d for d in docs if d in self._index]
+            skipped_docs.extend(d for d in docs if d not in self._index)
+            new_ent = {
+                "doc_ids": kept,
+                "prompt": str(v.get("prompt") or "").strip(),
+                "shield": bool(v.get("shield", False)),
+                "force_system_prompt": bool(v.get("force_system_prompt", False)),
+                "mode": self._normalize_mode(v.get("mode")) or "reference",
+                "ignore_history": bool(v.get("ignore_history", False)),
+            }
+            if ck in self._bindings:
+                self._merge_entries(self._bindings[ck], new_ent)
+            else:
+                self._bindings[ck] = new_ent
+            ent = self._bindings.get(ck)
+            if ent:
+                ent["mode"] = self._effective_mode(ent)
+            self._prune_empty_entry(ck)
+            if ck in self._bindings:
+                applied += 1
+        self._save_json(self.bindings_path, self._bindings)
+        return {
+            "ok": True,
+            "mode": mode,
+            "applied": applied,
+            "skipped_docs": sorted(set(skipped_docs)),
+            "skipped_keys": skipped_keys,
+        }
 
 
     # ---------- 插件配置（WebUI 读写 + data_dir 持久化） ----------
@@ -1053,63 +1269,70 @@ class XbdocStoreMixin:
             for k, meta in CONFIG_META.items()
         }
 
-    @_locked
     def save_plugin_config(self, incoming: Any) -> Dict[str, Any]:
-        """校验并保存 WebUI 设置；仅接受 CONFIG_DEFAULTS 已知键，类型/范围收敛后写回。"""
+        """校验并保存 WebUI 设置；仅接受 CONFIG_DEFAULTS 已知键，类型/范围收敛后写回。
+
+        锁只护 config 快照改写与小 JSON 落盘；切片缓存作废中的批量 unlink 是慢 I/O，
+        移到出锁后做（审计 #12「锁内只护内存态，磁盘 I/O 出锁」）。
+        """
         if not isinstance(incoming, dict):
             raise ValueError("config 须为对象")
-        cfg = dict(getattr(self, "config", None) or {})
-        # 记录切片参数旧值：变更时作废存量切片缓存（否则改 chunk_size 只对新上传生效）
-        old_chunk_params = (cfg.get("chunk_size"), cfg.get("chunk_overlap"))
-        for k in CONFIG_DEFAULTS:
-            if k not in incoming:
-                continue
-            v = incoming[k]
-            if CONFIG_META.get(k, {}).get("type") == "bool":
-                if isinstance(v, str):
-                    v = v.strip().lower() in ("1", "true", "yes", "on")
-                cfg[k] = bool(v)
-            elif CONFIG_META.get(k, {}).get("type") == "string":
-                # 文本型配置：不走下面的 int() 收敛（int("") 抛错即 continue，主题色会永远存不进去）。
-                # 按键做白名单校验，脏值直接丢弃保留现值
-                s = str(v if v is not None else "").strip()
-                if k == "ui_accent_color":
-                    if s:
-                        body = s[1:] if s.startswith("#") else ""
-                        if len(body) != 6 or any(c not in "0123456789abcdefABCDEF" for c in body):
-                            continue
-                        s = "#" + body
-                elif k == "ui_theme_mode" and s not in ("", "light", "dark"):
+        invalidate = False
+        with self._save_lock:
+            cfg = dict(getattr(self, "config", None) or {})
+            # 记录切片参数旧值：变更时作废存量切片缓存（否则改 chunk_size 只对新上传生效）
+            old_chunk_params = (cfg.get("chunk_size"), cfg.get("chunk_overlap"))
+            for k in CONFIG_DEFAULTS:
+                if k not in incoming:
                     continue
-                cfg[k] = s
-            else:
-                try:
-                    iv = int(v)
-                except Exception:
-                    continue
-                if k == "max_inject_chars":
-                    cfg[k] = max(0, iv)
-                elif k in ("chunk_size", "chunk_overlap", "top_k"):
-                    if iv < 0 or (iv == 0 and k != "chunk_overlap"):
+                v = incoming[k]
+                if CONFIG_META.get(k, {}).get("type") == "bool":
+                    if isinstance(v, str):
+                        v = v.strip().lower() in ("1", "true", "yes", "on")
+                    cfg[k] = bool(v)
+                elif CONFIG_META.get(k, {}).get("type") == "string":
+                    # 文本型配置：不走下面的 int() 收敛（int("") 抛错即 continue，主题色会永远存不进去）。
+                    # 按键做白名单校验，脏值直接丢弃保留现值
+                    s = str(v if v is not None else "").strip()
+                    if k == "ui_accent_color":
+                        if s:
+                            body = s[1:] if s.startswith("#") else ""
+                            if len(body) != 6 or any(c not in "0123456789abcdefABCDEF" for c in body):
+                                continue
+                            s = "#" + body
+                    elif k == "ui_theme_mode" and s not in ("", "light", "dark"):
                         continue
-                    if k == "chunk_size":
-                        iv = max(200, iv)
-                    elif k == "chunk_overlap":
-                        iv = max(0, iv)
-                    cfg[k] = iv
-        # 切片参数有变：作废全部切片缓存，下次读取按新参数惰性重建——
-        # 否则存量文档永远停留在旧参数，WebUI 改 chunk_size 看起来“无效”
-        if (cfg.get("chunk_size"), cfg.get("chunk_overlap")) != old_chunk_params:
+                    cfg[k] = s
+                else:
+                    try:
+                        iv = int(v)
+                    except Exception:
+                        continue
+                    if k == "max_inject_chars":
+                        cfg[k] = max(0, iv)
+                    elif k in ("chunk_size", "chunk_overlap", "top_k"):
+                        if iv < 0 or (iv == 0 and k != "chunk_overlap"):
+                            continue
+                        if k == "chunk_size":
+                            iv = max(200, iv)
+                        elif k == "chunk_overlap":
+                            iv = max(0, iv)
+                        cfg[k] = iv
+            # 切片参数有变：作废全部切片缓存，下次读取按新参数惰性重建——
+            # 否则存量文档永远停留在旧参数，WebUI 改 chunk_size 看起来“无效”
+            invalidate = (cfg.get("chunk_size"), cfg.get("chunk_overlap")) != old_chunk_params
+            # 合并后的完整快照落盘（缺失键补默认，便于人工编辑）
+            snapshot = {k: cfg.get(k, CONFIG_DEFAULTS[k]) for k in CONFIG_DEFAULTS}
+            self.config = {**cfg, **snapshot}
+            self._save_json(self.config_path, snapshot, indent=2)
+        if invalidate:
+            # 新配置已生效后再作废：内存清桶 + 锁外批量删切片文件，下次读取按新参数惰性重建
             self._invalidate_chunk_caches()
-        # 合并后的完整快照落盘（缺失键补默认，便于人工编辑）
-        snapshot = {k: cfg.get(k, CONFIG_DEFAULTS[k]) for k in CONFIG_DEFAULTS}
-        self.config = {**cfg, **snapshot}
-        self._save_json(self.config_path, snapshot, indent=2)
         return dict(snapshot)
 
     def _invalidate_chunk_caches(self) -> None:
         """切片参数变更后作废全部切片缓存（内存 + chunks_*.json + BM25），惰性重建。"""
-        with self._save_lock:
+        with self._save_lock:  # 只护内存缓存桶的状态改写
             self._chunk_cache.clear()
             self._chunk_tokens_cache.clear()
             self._fulltext_cache.clear()
@@ -1117,11 +1340,12 @@ class XbdocStoreMixin:
                 self._bm25_cache.clear()
             except Exception:
                 pass
-            for p in self.data_dir.glob("chunks_*.json"):
-                try:
-                    p.unlink(missing_ok=True)
-                except Exception:
-                    pass
+        # 锁外批量 unlink（审计 #12）：慢 I/O 不占状态锁；文件已无内存引用，读路径按需重建
+        for p in self.data_dir.glob("chunks_*.json"):
+            try:
+                p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     # ---------- 动态配置读取（唯一来源：CONFIG_DEFAULTS + 实时 config） ----------
     def _cfg(self, key: str, default: Any = None) -> Any:

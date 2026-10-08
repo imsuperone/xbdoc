@@ -151,53 +151,32 @@
     },
 
     async upload(endpoint, file) {
-      // 大文件跳过 base64（体积膨胀约 1/3 且后端 JSON 解析吃内存），直接走 multipart；
-      // 小文件仍优先 base64 JSON 直传（彻底消除 iframe 跨域 FormData 克隆失效与字段名不匹配问题）
-      const useBase64 = !file || !file.size || file.size <= 8 * 1024 * 1024;
-      if (useBase64) {
-        try {
-          const b64 = await fileToBase64(file);
-          if (b64) {
-            return await api.post(endpoint, {
-              filename: file.name,
-              file_base64: b64,
-            });
-          }
-        } catch (e) {
-          console.warn("[DocMemory] Base64 upload fallback:", e);
-        }
+      // 上传唯一链路：base64 JSON 直传（与后端 _api_upload_doc 一一对应）。
+      // 决策记录（审计行 #7）：方向列原定「保留文件表单通道一条」，但实测 iframe 跨域下
+      // 表单对象跨文档克隆失效、文件字段名与后端解析不匹配（本文件历史注释记载的实测 bug），
+      // base64 才是可靠路径，且旧后端 base64 本就支持 50MB 源文件上限——故定案 base64-only，
+      // 方向列被实测约束否决。
+      // 不再静默 fallback：失败直接抛错，由调用方 toast 展示。
+      if (!file) {
+        throw new Error("上传请求未成功发送：缺少文件");
       }
-
-      // 2. 备用方式：FormData
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const b = getBridge();
-      if (b && typeof b.upload === "function") {
-        try {
-          return await b.upload(endpoint, file);
-        } catch (e) {}
+      let b64;
+      try {
+        b64 = await fileToBase64(file);
+      } catch (e) {
+        throw new Error("上传请求未成功发送：文件读取失败");
       }
-
-      // 已探测前缀优先，其次走标准 POST 前缀表（与 post 共用，不再各写一份）
-      const prefixes = _detectedPrefix
-        ? [_detectedPrefix, ...POST_PREFIXES]
-        : POST_PREFIXES;
-
-      for (const pfx of prefixes) {
-        try {
-          const res = await fetch(`${pfx}${endpoint}`, {
-            method: "POST",
-            body: formData,
-          });
-          if (res.ok) {
-            _detectedPrefix = pfx;
-            return await res.json();
-          }
-        } catch (e) {}
+      if (!b64) {
+        throw new Error("上传请求未成功发送：文件内容为空");
       }
-
-      throw new Error("上传请求未成功发送");
+      try {
+        return await api.post(endpoint, {
+          filename: file.name,
+          file_base64: b64,
+        });
+      } catch (e) {
+        throw new Error(`上传请求未成功发送：${e.message}`);
+      }
     },
 
     async download(endpoint, params = {}) {

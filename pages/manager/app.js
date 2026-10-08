@@ -208,6 +208,29 @@
   let currentForcePrompt = false;
   let currentBindingFilter = "all";
 
+  // ---- 会话 Key 认领（审计 #5）：选择载入与保存前纯数字认领共用一份实现。
+  // 顺序：① 精确键命中 → ② 后缀认领（尾段相等；group: 前缀优先于 private: —— 群号与私聊
+  // UID 同号冲突时按群聊认领；旧两处实现此处互相矛盾：原 findBindingKey 私聊优先、
+  // 保存前认领群聊优先，现统一为「群聊优先」，与保存路径历史语义一致）→ ③ 都没有时按
+  // 调用方语义处理：默认返回 ""（选择/载入语义：miss 不认领）；传 { claimPrefix: "group:" }
+  // （保存路径）时，纯数字输入补前缀成为新 key。群聊/私聊前缀都不命中的尾段匹配（如
+  // 老脏键 xxx:123）同样认领——与原 findBindingKey 一致，保存不再另起炉灶写第二个 key。
+  function claimBindingKey(v, opts) {
+    const s = (v || "").trim();
+    if (!s) return "";
+    if (bindingsMap[s]) return s;
+    const keys = Object.keys(bindingsMap);
+    const tailEq = (k) => String(k || "").split(":").pop() === s;
+    const grp = keys.find((k) => k.startsWith("group:") && tailEq(k));
+    if (grp) return grp;
+    const priv = keys.find((k) => k.startsWith("private:") && tailEq(k));
+    if (priv) return priv;
+    const anyHit = keys.find(tailEq);
+    if (anyHit) return anyHit;
+    if (opts && opts.claimPrefix && /^\d{5,}$/.test(s)) return opts.claimPrefix + s;
+    return "";
+  }
+
   // ---- Theme Handling ----
   function initTheme() {
     try {
@@ -937,12 +960,10 @@
         showToast("正在从机器人适配器获取群聊列表，请稍候……", 4000);
 
         try {
-          let res = null;
-          try {
-            res = await api.post("groups/fetch");
-          } catch (e) {
-            res = await api.get("groups", { refresh: "1" });
-          }
+          // 群列表唯一刷新入口：POST groups/fetch（审计 #6）。/groups 已是只读搜索，
+          // 原主备两连的 GET fallback 只会拿到不刷新的旧列表，属于误导，已删；
+          // 失败由本函数外层 catch 的 toast 兜底
+          const res = await api.post("groups/fetch");
 
           const list = res.groups || res.data?.groups || [];
           const newCount = res.new_fetched !== undefined ? res.new_fetched : list.length;
@@ -988,21 +1009,7 @@
     });
 
     // 手填 Key 切走时：命中已知会话则载入，否则重置提示词/开关为默认，避免把上个群的配置存到新群
-    // 后缀精确匹配：限定 key（group:plat:123）同样能被纯数字/老格式命中
-    function findBindingKey(v) {
-      const s = (v || "").trim();
-      if (!s) return "";
-      if (bindingsMap[s]) return s;
-      const tailEq = (k) => String(k || "").split(":").pop() === s;
-      if (/^\d{5,}$/.test(s)) {
-        // 纯数字可能是群号也可能是私聊 UID：已存在的绑定优先命中，避免串台
-        const priv = Object.keys(bindingsMap).find((k) => k.startsWith("private:") && tailEq(k));
-        const grp = Object.keys(bindingsMap).find((k) => k.startsWith("group:") && tailEq(k));
-        if (priv && !grp) return priv;
-        if (grp) return grp;
-      }
-      return Object.keys(bindingsMap).find(tailEq) || "";
-    }
+    // 后缀精确匹配走 claimBindingKey（与保存前认领共用一份实现，审计 #5）
 
     function resetSessionControls() {
       const bp = $("bindPrompt");
@@ -1022,7 +1029,7 @@
     input.addEventListener("change", () => {
       const v = input.value.trim();
       if (!v || v === loadedSessionKey) return;
-      const hit = findBindingKey(v);
+      const hit = claimBindingKey(v);
       if (hit) {
         input.value = hit;
         loadExistingSessionSettings(hit);
@@ -1220,18 +1227,9 @@
         }
 
         if (/^\d{5,}$/.test(key)) {
-          // 纯数字：已有绑定按后缀精确认领（含限定 key），都没有默认按群号；后端还会按 seen 再补限定
-          const tailEq = (k) => String(k || "").split(":").pop() === key;
-          const privHit = Object.keys(bindingsMap).find((k) =>
-            k.startsWith("private:") && tailEq(k));
-          const grpHit = Object.keys(bindingsMap).find((k) =>
-            k.startsWith("group:") && tailEq(k));
-          const hit = grpHit || privHit;
-          if (hit) {
-            key = hit;
-          } else {
-            key = "group:" + key;
-          }
+          // 纯数字：与选择载入共用 claimBindingKey（审计 #5）——已有绑定按后缀精确认领
+          // （群聊优先），都没有默认补 group: 前缀；后端还会按 seen 再补限定
+          key = claimBindingKey(key, { claimPrefix: "group:" });
           input.value = key;
         }
 
@@ -1248,12 +1246,15 @@
           prompt = curText !== storedText ? curText : storedText;
         }
         const shield = currentShield === "on";
-        // 未选文档时模式强制回落（后端同样会强制），避免存下无效模式
-        const mode = ids.length > 0 ? (currentDocMode || "none") : "reference";
+        // 模式只提交表单所选（审计 #4）：「无文档⇒reference」的回落只在 store._effective_mode
+        // 一处（save_binding_payload 落盘前强制），前端不再复写第二份规则
+        const mode = currentDocMode || "none";
         const forceSys = currentForcePrompt;
 
         try {
-          await api.post("bindings/save", {
+          // save 响应即渲染（审计 #2）：回包 entry 与 GET /bindings 同源，直接更新本地映射
+          // → renderBindings()，删除「保存→丢弃→重拉」的 loadBindings()
+          const res = await api.post("bindings/save", {
             session_key: key,
             doc_ids: ids,
             prompt: prompt,
@@ -1264,7 +1265,18 @@
           showToast("会话绑定与配置已保存。");
           loadedSessionKey = key;
           promptDirty = false;
-          await loadBindings();
+          const sk = (res && res.session_key) || key;
+          if (res && res.session_key) {
+            if (res.entry) {
+              bindingsMap[sk] = res.entry;
+            } else {
+              // 空壳被后端 prune（entry=null）：与整表重拉口径一致，从列表删键
+              delete bindingsMap[sk];
+            }
+          }
+          renderBindings();
+          // 群建议框的「已绑定」标记来自服务端（/groups 合并 bindings），groupsCache 是
+          // 服务端快照且 focus 时非空即复用不重查——这里刷新它保证建议框状态正确，保留
           await searchGroups("");
         } catch (err) {
           showToast("配置保存失败：" + err.message);

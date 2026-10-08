@@ -6,7 +6,7 @@
 import hashlib
 import re
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
@@ -32,6 +32,11 @@ def mode_label(mode: str) -> str:
 def shield_label(shield: bool) -> str:
     """屏蔽统一文案"""
     return "🛡️ 开启（已清空原人格）" if shield else "👤 关闭（保留原人格）"
+
+
+def force_label(force: bool) -> str:
+    """强制系统词统一文案"""
+    return "⚡ 开启（清空其他提示词，专属提示词唯一生效）" if force else "关闭"
 
 
 # ======================================================================
@@ -84,32 +89,67 @@ class XbdocCommandsMixin:
         yield event.plain_result("\n".join(lines).strip())
 
 
+    def _state_of(self, event: AstrMessageEvent) -> Dict[str, Any]:
+        """status / prompt / workspace 共用的状态收集：一次会话解析取全部展示字段。
+
+        旧逻辑各命令先 get_bound_doc_ids 再 _session_keys 再 _effective_session，
+        一条查询白做 2-3 次完整解析；现在统一只解析一次。
+        """
+        sess = self._effective_session(event)
+        ids = sess.get("doc_ids", [])
+        prompt = str(sess.get("prompt") or "").strip()
+        mode = str(sess.get("mode") or "reference")
+        force = bool(sess.get("force_system_prompt", False))
+        return {
+            "key": str(sess.get("matched_key") or "default"),
+            "ids": ids,
+            "mode": mode,
+            "mode_text": mode_label(mode) if ids else "➖ 无（未绑定文档）",
+            "shield_text": shield_label(bool(sess.get("shield", False))),
+            "force_text": force_label(force),
+            "force": force,
+            "prompt": prompt,
+            "prompt_text": f"已设置（{len(prompt)}字）" if prompt else "未设置",
+            "prompt_preview": (prompt[:260] + "…") if len(prompt) > 260 else prompt,
+        }
+
+
+    @staticmethod
+    def _render_state(st: Dict[str, Any], variant: str) -> List[str]:
+        """status / prompt / workspace 共用的状态渲染：一份状态、三种口径，只此一份实现。"""
+        lines = [f"• 生效模式：{st['mode_text']}"]
+        if variant != "workspace":
+            lines.append(f"• 人格屏蔽：{st['shield_text']}")
+        if variant == "status":
+            lines += [
+                f"• 强制系统词：{st['force_text']}",
+                f"• 专属提示词：{st['prompt_text']}",
+            ]
+        elif variant == "prompt":
+            lines += [
+                f"• 绑定文档：{len(st['ids'])} 篇",
+                f"• 专属提示词：\n{st['prompt_preview'] or '（未设置）'}",
+            ]
+        elif st["ids"]:
+            lines.append(f"• 挂载文件数量：共 {len(st['ids'])} 篇文档")
+        return lines
+
+
     async def doc_status(self, event: AstrMessageEvent):
         """查看本会话绑定的文档 /xbdoc status"""
-        ids = self.get_bound_doc_ids(event)
-        keys = self._session_keys(event)
-        sess = self._effective_session(event)
-        curr_key = keys[0] if keys else "(未知)"
-        shield_txt = shield_label(sess.get("shield"))
-        # 模式只在绑定文档后才有意义：无文档时显示"无"，不冒充参考资料模式
-        mode_txt = mode_label(sess.get("mode")) if ids else "➖ 无（未绑定文档）"
-        has_prompt = bool(sess.get("prompt"))
-        prompt_txt = f"已设置（{len(sess['prompt'])}字）" if has_prompt else "未设置"
-        force_sys = bool(sess.get("force_system_prompt"))
-        force_txt = "⚡ 开启（清空其他提示词，专属提示词唯一生效）" if force_sys else "关闭"
+        st = self._state_of(event)
+        ids = st["ids"]
 
         lines = [
             "📌 本群文档记忆状态\n",
-            f"• 会话标识：{curr_key}",
-            f"• 生效模式：{mode_txt}",
-            f"• 人格屏蔽：{shield_txt}",
-            f"• 强制系统词：{force_txt}",
-            f"• 专属提示词：{prompt_txt}\n",
+            f"• 会话标识：{st['key']}",
+            *self._render_state(st, "status"),
+            "",
         ]
         if not ids:
-            if has_prompt:
+            if st["prompt"]:
                 lines.append("💡 当前未绑定文档，专属系统提示词正常独立生效中。")
-                if force_sys:
+                if st["force"]:
                     lines.append("⚡ 强制注入模式已激活：已清空其他提示词，专属提示词作为底层唯一系统词。")
             else:
                 lines.append("⚠️ 本群当前未绑定任何文档。")
@@ -121,11 +161,11 @@ class XbdocCommandsMixin:
                 fname = meta.get("filename", d)
                 lines.append(f"{idx}. {fname}（ID: {d}）")
             lines.append("")
-            if sess.get("mode") == "workspace":
+            if st["mode"] == "workspace":
                 lines.append("💻 说明：当前会话处于独立工作区沙箱，大模型仅对工作区内的挂载文档进行严谨分析与回答。")
-            elif sess.get("mode") == "system":
+            elif st["mode"] == "system":
                 lines.append("⚡ 说明：大模型已将文档作为最高系统设定执行，强制遵守文档规则与设定。")
-            elif sess.get("mode") == "none":
+            elif st["mode"] == "none":
                 lines.append("🚫 说明：当前模式下不注入文档，仅保留专属提示词与人格屏蔽等配置。")
             else:
                 lines.append("📖 说明：群内提问相关内容时，AI 将检索片段作为参考资料引用回答。")
@@ -137,24 +177,23 @@ class XbdocCommandsMixin:
 
     async def doc_workspace(self, event: AstrMessageEvent):
         """查看当前模拟工作区状态与文件清单 /xbdoc workspace"""
-        ids = self.get_bound_doc_ids(event)
-        sess = self._effective_session(event)
-        key = str(sess.get("matched_key") or self._canonical_key(event))
-        mode = str(sess.get("mode") or "reference")
+        st = self._state_of(event)
+        ids = st["ids"]
+        head = f"💻 模拟工作区详情（{st['key']}）\n"
 
         if not ids:
-            yield event.plain_result(
-                f"💻 模拟工作区详情（{key}）\n\n"
-                f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else ('🚫 无（不注入）' if mode == 'none' else '📖 普通模式')}\n"
-                "⚠️ 当前工作区尚未挂载用户文档。\n"
-                "💡 发送 /xbdoc list 查看可用文档，使用 /xbdoc bind <ID> 挂载文件到工作区。"
-            )
+            yield event.plain_result("\n".join([
+                head,
+                *self._render_state(st, "workspace"),
+                "⚠️ 当前工作区尚未挂载用户文档。",
+                "💡 发送 /xbdoc list 查看可用文档，使用 /xbdoc bind <ID> 挂载文件到工作区。",
+            ]).strip())
             return
 
         lines = [
-            f"💻 模拟工作区详情（{key}）\n",
-            f"• 当前模式：{'💻 模拟工作区模式 (生效中)' if mode == 'workspace' else ('🚫 无（不注入）' if mode == 'none' else '📖 普通模式 (发送 /xbdoc mode workspace 切换为工作区)')}",
-            f"• 挂载文件数量：共 {len(ids)} 篇文档\n",
+            head,
+            *self._render_state(st, "workspace"),
+            "",
             "📁 工作区根目录 [/workspace] 文件清单：",
         ]
         total_len = 0
@@ -168,7 +207,7 @@ class XbdocCommandsMixin:
             lines.append(f"   └─ 大小: {meta.get('chunks', 1)} 切片 · {tlen:,} 字符")
 
         lines.append(f"\n📊 工作区总文本容量：{total_len:,} 字符")
-        if mode != "workspace":
+        if st["mode"] != "workspace":
             lines.append("\n💡 发送 /xbdoc mode workspace 可切换为工作区模式。")
         yield event.plain_result("\n".join(lines).strip())
 
@@ -186,94 +225,49 @@ class XbdocCommandsMixin:
         if bad:
             yield event.plain_result(f"❌ 绑定失败：以下 ID 不存在于知识库中：\n{', '.join(bad)}\n\n💡 请发送 /xbdoc list 查看可用 ID。")
             return
-        # 读改写加锁：两端并发写同一会话不丢数据
-        with self._save_lock:
-            key, _ = self._resolve_session(event, create=False)
-            existed = [d for d in (self._bindings.get(key) or {}).get("doc_ids", []) if d in self._index]
-            added = [i for i in ids if i not in existed]
-            dup = [i for i in ids if i in existed]
-            self.bind_docs(key, existed + added)
-            self._save_json(self.bindings_path, self._bindings)
-            ent = self._bindings.get(key) or {}
-            mode_txt = mode_label(ent.get("mode"))
-            total = len(existed) + len(added)
-            lines = [f"✅ 绑定成功！已关联到本群（{key}）：\n"]
-            for did in added:
-                lines.append(f"• 新增：{self._index[did]['filename']}（ID: {did}）")
-            for did in dup:
-                lines.append(f"• 已在绑定中：{self._index[did]['filename']}（ID: {did}）")
-            lines.append(f"\n本群共绑定 {total} 篇，当前模式：{mode_txt}")
-            lines.append("💡 切换为强制遵守模式：/xbdoc mode system")
-            lines.append("💡 切换为参考资料模式：/xbdoc mode reference")
-            msg = "\n".join(lines).strip()
-        yield event.plain_result(msg)
+        # 读改写与落盘全在 store 写口锁内完成（bind_docs_report），快照出锁后拼回复（审计 #3/#8）
+        rep = self.bind_docs_report(event, ids)
+        key = rep["key"]
+        lines = [f"✅ 绑定成功！已关联到本群（{key}）：\n"]
+        for did in rep["added"]:
+            lines.append(f"• 新增：{(self._index.get(did) or {}).get('filename', did)}（ID: {did}）")
+        for did in rep["dup"]:
+            lines.append(f"• 已在绑定中：{(self._index.get(did) or {}).get('filename', did)}（ID: {did}）")
+        lines.append(f"\n本群共绑定 {rep['total']} 篇，当前模式：{mode_label(rep['mode'])}")
+        lines.append("💡 切换为强制遵守模式：/xbdoc mode system")
+        lines.append("💡 切换为参考资料模式：/xbdoc mode reference")
+        yield event.plain_result("\n".join(lines).strip())
 
 
     async def doc_unbind(self, event: AstrMessageEvent, args: List[str]):
         """解绑文档 /xbdoc unbind [id...]，留空则清空绑定（管理员）"""
         tokens = self._parse_doc_ids(*args)
-        with self._save_lock:
-            keys = self._find_matching_keys(event)
-            main_key = keys[0]
-            targets = [k for k in keys if (self._bindings.get(k) or {}).get("doc_ids")]
-            if not tokens:
-                # 留空 = 恢复出厂（README「解绑即恢复出厂」）：文档、提示词、屏蔽、强制注入、断史、
-                # 模式一并清除。按 keys 全清而非仅含文档的 targets——无文档但有提示词/开关的
-                # 会话同样要恢复出厂（此前漏清，与 WebUI 解绑分叉）。
-                touched = 0
-                for k in keys:
-                    ent = self._bindings.get(k)
-                    if not ent:
-                        continue
-                    ent["doc_ids"] = []
-                    ent["prompt"] = ""
-                    ent["shield"] = False
-                    ent["force_system_prompt"] = False
-                    ent["ignore_history"] = False
-                    ent["mode"] = "reference"
-                    if self._prune_empty_entry(k):
-                        touched += 1
-                self._save_json(self.bindings_path, self._bindings)
-                if not touched and not targets:
-                    msg = f"⚠️ 本群（{main_key}）当前未绑定任何文档。"
-                else:
-                    tail = "相关配置已彻底移除。" if touched else "已回到默认配置。"
-                    msg = f"✅ 已清空本群（{main_key}）的所有文档绑定，专属提示词、屏蔽与强制注入已一并清除。{tail}"
-            elif not targets:
-                msg = f"⚠️ 本群（{main_key}）当前未绑定任何文档。"
+        # 读改写与落盘全在 store 写口锁内完成（unbind_docs：含恢复出厂与 prune），
+        # 返回 Dict 后出锁拼回复（审计 #3/#4/#8）；三分支文案与旧实现逐字一致
+        r = self.unbind_docs(event, tokens)
+        key = r["key"]
+        targets = r["targets"]
+        if not tokens:
+            # 留空 = 恢复出厂（README「解绑即恢复出厂」）：文档、提示词、屏蔽、强制注入、断史、
+            # 模式一并清除。按 keys 全清而非仅含文档的 targets——无文档但有提示词/开关的
+            # 会话同样要恢复出厂（此前漏清，与 WebUI 解绑分叉）。
+            if not r["touched"] and not targets:
+                msg = f"⚠️ 本群（{key}）当前未绑定任何文档。"
             else:
-                removed: List[str] = []
-                not_found: List[str] = []
-                for t in tokens:
-                    hit = False
-                    for k in targets:
-                        ent = self._bindings.get(k) or {}
-                        if t in ent.get("doc_ids", []):
-                            ent["doc_ids"] = [d for d in ent["doc_ids"] if d != t]
-                            hit = True
-                    (removed if hit else not_found).append(t)
-                # 若解绑后已无文档，视为彻底解绑：提示词/屏蔽/强制/断史一并清除
-                remaining = sum(len((self._bindings.get(k) or {}).get("doc_ids", [])) for k in targets)
-                if remaining == 0:
-                    for k in targets:
-                        ent = self._bindings.get(k) or {}
-                        ent["prompt"] = ""
-                        ent["shield"] = False
-                        ent["force_system_prompt"] = False
-                        ent["ignore_history"] = False
-                        ent["mode"] = "reference"
-                    for k in targets:
-                        self._prune_empty_entry(k)
-                self._save_json(self.bindings_path, self._bindings)
-                msg = f"✅ 解绑完成（{main_key}）："
-                if removed:
-                    msg += f"\n• 已移除：{', '.join(removed)}"
-                if not_found:
-                    msg += f"\n• 未绑定/不存在：{', '.join(not_found)}"
-                if remaining == 0:
-                    msg += "\n• 本群已无绑定文档，提示词与屏蔽已一并清除。"
-                else:
-                    msg += f"\n本群当前剩余：{remaining} 篇文档。"
+                tail = "相关配置已彻底移除。" if r["touched"] else "已回到默认配置。"
+                msg = f"✅ 已清空本群（{key}）的所有文档绑定，专属提示词、屏蔽与强制注入已一并清除。{tail}"
+        elif not targets:
+            msg = f"⚠️ 本群（{key}）当前未绑定任何文档。"
+        else:
+            msg = f"✅ 解绑完成（{key}）："
+            if r["removed"]:
+                msg += f"\n• 已移除：{', '.join(r['removed'])}"
+            if r["not_found"]:
+                msg += f"\n• 未绑定/不存在：{', '.join(r['not_found'])}"
+            if r["remaining"] == 0:
+                msg += "\n• 本群已无绑定文档，提示词与屏蔽已一并清除。"
+            else:
+                msg += f"\n本群当前剩余：{r['remaining']} 篇文档。"
         yield event.plain_result(msg)
 
 
@@ -327,22 +321,12 @@ class XbdocCommandsMixin:
 
     async def doc_prompt(self, event: AstrMessageEvent):
         """查看本群提示词、生效模式与屏蔽状态 /xbdoc prompt"""
-        sess = self._effective_session(event)
-        doc_ids = sess.get("doc_ids", [])
-        eff_prompt = str(sess.get("prompt") or "").strip()
-        eff_shield = bool(sess.get("shield", False))
-        mode = str(sess.get("mode") or "reference")
-        preview = (eff_prompt[:260] + "…") if len(eff_prompt) > 260 else eff_prompt
-        shield_desc = shield_label(eff_shield)
-        # 模式只在绑定文档后才有意义：无文档时显示"无"，与 status 口径一致
-        mode_desc = mode_label(mode) if doc_ids else "➖ 无（未绑定文档）"
-
+        # 一次会话解析取全部字段 + 共享 prompt 渲染变体（审计 #9/#10b：不再各命令各拼一份状态）
+        st = self._state_of(event)
+        body = "\n".join(self._render_state(st, "prompt"))
         yield event.plain_result(
             "🧩 本群配置详情\n\n"
-            f"• 生效模式：{mode_desc}\n"
-            f"• 人格屏蔽：{shield_desc}\n"
-            f"• 绑定文档：{len(doc_ids)} 篇\n"
-            f"• 专属提示词：\n{preview or '（未设置）'}\n\n"
+            f"{body}\n\n"
             "⚙️ 管理指令：\n"
             "• /xbdoc mode system | workspace | reference | none\n"
             "• /xbdoc shield on | off\n"
@@ -377,9 +361,8 @@ class XbdocCommandsMixin:
                 f"❌ 未知模式「{raw}」，可用：workspace / system / reference / none（首字母 w / s / r / n 也可）。"
             )
             return
-        with self._save_lock:
-            key, _ = self._resolve_session(event, create=False)
-            self.set_session_mode(key, norm)
+        # 写口自带锁+落盘（set_session_mode），resolve 与调用都不持行级锁（审计 #8）
+        self.set_session_mode(read_key, norm)
         if norm == "workspace":
             yield event.plain_result(
                 f"💻 本群模式已切换为【模拟工作区】！\n\n"
@@ -408,9 +391,9 @@ class XbdocCommandsMixin:
         if len(text) < 2:
             yield event.plain_result("用法：/xbdoc prompt_set <本群专属提示词内容>，至少2个字。")
             return
-        with self._save_lock:
-            key, _ = self._resolve_session(event, create=False)
-            self.set_session_prompt(key, text)
+        # 写口自带锁+落盘（set_session_prompt），消息在锁外拼（审计 #8）
+        key, _ = self._resolve_session(event, create=False)
+        self.set_session_prompt(key, text)
         yield event.plain_result(
             f"✅【本群专属提示词已生效】\n"
             f"会话标识：{key}\n"
@@ -421,17 +404,15 @@ class XbdocCommandsMixin:
 
     async def doc_prompt_clear(self, event: AstrMessageEvent):
         """清空本群提示词 /xbdoc prompt_clear（管理员）"""
-        with self._save_lock:
-            key, ent = self._resolve_session(event, create=False)
-            if not ent:
-                msg = f"⚠️ 本群（{key}）当前未设置专属提示词。"
-            elif not ent.get("prompt"):
-                msg = f"✅ 已清空本群（{key}）专属提示词。"
-            else:
-                ent["prompt"] = ""
-                self._prune_empty_entry(key)
-                self._save_json(self.bindings_path, self._bindings)
-                msg = f"✅ 已清空本群（{key}）专属提示词。"
+        # 读判在锁外（展示性预读），清空走写口 set_session_prompt("", 自带 prune+落盘)，消息出锁（审计 #8）
+        key, ent = self._resolve_session(event, create=False)
+        if not ent:
+            msg = f"⚠️ 本群（{key}）当前未设置专属提示词。"
+        elif not ent.get("prompt"):
+            msg = f"✅ 已清空本群（{key}）专属提示词。"
+        else:
+            self.set_session_prompt(key, "")
+            msg = f"✅ 已清空本群（{key}）专属提示词。"
         yield event.plain_result(msg)
 
 
@@ -448,81 +429,72 @@ class XbdocCommandsMixin:
         return None
 
 
+    def _toggle_flag_cmd(
+        self,
+        event: AstrMessageEvent,
+        args: List[str],
+        field: str,
+        usage: str,
+        on_msg: str,
+        off_msg: str,
+    ) -> str:
+        """shield / force 共用的开关指令骨架（审计 #10a）：读-判-写同构，文案逐字保留。
+
+        cur 预读与 _parse_on_off 是展示性读取，锁外做；仅值确实变化才走 set_session_flag
+        写口（自带锁+落盘+prune）。旧实现「值未变」与「已切换」两分支文案本就逐字相同，
+        此处按 target 取一份，消息一律在锁外拼（审计 #8）。
+        """
+        raw = " ".join(args)
+        key, _ = self._resolve_session(event, create=False)
+        cur = bool((self._bindings.get(key) or {}).get(field, False))
+        target = self._parse_on_off(raw, cur)
+        if target is None:
+            return usage
+        if bool(target) != cur:
+            self.set_session_flag(key, field, bool(target))
+        return (on_msg if target else off_msg).format(key=key)
+
+
     async def doc_shield(self, event: AstrMessageEvent, args: List[str]):
         """本群屏蔽 AstrBot 原人格开关 /xbdoc shield on|off（管理员）"""
-        raw = " ".join(args)
-        with self._save_lock:
-            key, _ = self._resolve_session(event, create=False)
-            cur_shield = bool((self._bindings.get(key) or {}).get("shield", False))
-            target = self._parse_on_off(raw, cur_shield)
-            if target is None:
-                msg = "❌ 用法错误：/xbdoc shield on（开启） | off（关闭）"
-            elif bool(target) == cur_shield:
-                if target:
-                    msg = f"🛡️ 本群已开启人格屏蔽！已彻底清空 AstrBot 自带人格，进入纯文档/提示词模式。"
-                else:
-                    msg = f"👤 本群已关闭人格屏蔽！已恢复 AstrBot 原有人格。"
-            else:
-                ent = self._get_entry(key)
-                ent["shield"] = bool(target)
-                self._prune_empty_entry(key)
-                self._save_json(self.bindings_path, self._bindings)
-                if target:
-                    msg = f"🛡️ 本群已开启人格屏蔽！已彻底清空 AstrBot 自带人格，进入纯文档/提示词模式。"
-                else:
-                    msg = f"👤 本群已关闭人格屏蔽！已恢复 AstrBot 原有人格。"
-        yield event.plain_result(msg)
+        yield event.plain_result(self._toggle_flag_cmd(
+            event, args, "shield",
+            "❌ 用法错误：/xbdoc shield on（开启） | off（关闭）",
+            "🛡️ 本群已开启人格屏蔽！已彻底清空 AstrBot 自带人格，进入纯文档/提示词模式。",
+            "👤 本群已关闭人格屏蔽！已恢复 AstrBot 原有人格。",
+        ))
 
 
     async def doc_force(self, event: AstrMessageEvent, args: List[str]):
         """切换强制注入系统提示词开关 /xbdoc force on|off（管理员）"""
-        raw = " ".join(args)
-        with self._save_lock:
-            key, _ = self._resolve_session(event, create=False)
-            cur = bool((self._bindings.get(key) or {}).get("force_system_prompt", False))
-            target = self._parse_on_off(raw, cur)
-            if target is None:
-                msg = "用法：/xbdoc force on (开启强制注入) | off (关闭)"
-            elif bool(target) == cur:
-                if target:
-                    msg = f"⚡【强制注入系统提示词已开启】\n会话（{key}）：将清空其他一切提示词，强制本群专属提示词为唯一底层系统提示词。"
-                else:
-                    msg = f"✅【强制注入系统提示词已关闭】\n会话（{key}）：已恢复正常模式。"
-            else:
-                ent = self._get_entry(key)
-                ent["force_system_prompt"] = bool(target)
-                self._prune_empty_entry(key)
-                self._save_json(self.bindings_path, self._bindings)
-                if target:
-                    msg = f"⚡【强制注入系统提示词已开启】\n会话（{key}）：将清空其他一切提示词，强制本群专属提示词为唯一底层系统提示词。"
-                else:
-                    msg = f"✅【强制注入系统提示词已关闭】\n会话（{key}）：已恢复正常模式。"
-        yield event.plain_result(msg)
+        yield event.plain_result(self._toggle_flag_cmd(
+            event, args, "force_system_prompt",
+            "用法：/xbdoc force on (开启强制注入) | off (关闭)",
+            "⚡【强制注入系统提示词已开启】\n会话（{key}）：将清空其他一切提示词，强制本群专属提示词为唯一底层系统提示词。",
+            "✅【强制注入系统提示词已关闭】\n会话（{key}）：已恢复正常模式。",
+        ))
 
 
     async def doc_no(self, event: AstrMessageEvent, args: List[str]):
         """清空历史记忆并停止读取此指令之前的消息 /xbdoc no [off]"""
         raw = " ".join(args).strip().lower()
-        with self._save_lock:
-            key, _ = self._resolve_session(event, create=False)
-            if raw in ("off", "恢复", "false", "0", "no_off", "reset", "yes"):
-                ent = self._bindings.get(key)
-                if ent:
-                    ent["ignore_history"] = False
-                    self._save_json(self.bindings_path, self._bindings)
-                logger.info(f"[{PLUGIN_NAME}] [doc no] 恢复历史读取 (会话: {key})")
-                msg = f"✅ 已恢复读取历史消息上下文（会话：{key}）。"
-            else:
-                ent = self._get_entry(key)
-                ent["ignore_history"] = True
-                self._save_json(self.bindings_path, self._bindings)
-                logger.info(f"[{PLUGIN_NAME}] [doc no] 清空历史记忆 (会话: {key})")
-                msg = (
-                    f"🧹【已清空历史消息记忆】\n\n"
-                    f"本群（{key}）已彻底清空并停止读取此指令之前的所有消息！\n"
-                    "此前哪怕有聊天记录也会全部忘掉，后续仅响应当前提问与绑定文档。\n\n"
-                    "💡 如需恢复读取历史聊天：/xbdoc no off"
-                )
+        # 裸写 ignore_history 改走 set_session_flag 写口（自带锁+落盘+prune），消息在锁外拼（审计 #3/#8）
+        key, _ = self._resolve_session(event, create=False)
+        if raw in ("off", "恢复", "false", "0", "no_off", "reset", "yes"):
+            if self._bindings.get(key):
+                # 已有条目才写：无条目不开空壳、不落盘（与旧行为一致）
+                self.set_session_flag(key, "ignore_history", False)
+            logger.info(f"[{PLUGIN_NAME}] [doc no] 恢复历史读取 (会话: {key})")
+            msg = f"✅ 已恢复读取历史消息上下文（会话：{key}）。"
+        else:
+            self.set_session_flag(key, "ignore_history", True)
+            logger.info(f"[{PLUGIN_NAME}] [doc no] 清空历史记忆 (会话: {key})")
+            msg = (
+                f"🧹【已清空历史消息记忆】\n\n"
+                f"本群（{key}）已彻底清空并停止读取此指令之前的所有消息！\n"
+                "此前哪怕有聊天记录也会全部忘掉，后续仅响应当前提问与绑定文档。\n\n"
+                "💡 如需恢复读取历史聊天：/xbdoc no off"
+            )
 
         # 同步重置当前底层对话会话 ID（仅开启断史时；字段不存在则跳过）
         if raw not in ("off", "恢复", "false", "0", "no_off", "reset", "yes"):

@@ -41,8 +41,8 @@ class XbdocWebAPIMixin:
         reg(f"/{PLUGIN_NAME}/docs/delete", self._api_delete_doc, ["POST"], "删除文档")
         reg(f"/{PLUGIN_NAME}/docs/content", self._api_doc_content, ["GET"], "预览文档")
         reg(f"/{PLUGIN_NAME}/docs/download", self._api_doc_download, ["GET"], "下载文档")
-        reg(f"/{PLUGIN_NAME}/groups", self._api_list_groups, ["GET"], "列出已见群聊")
-        reg(f"/{PLUGIN_NAME}/groups/fetch", self._api_fetch_groups, ["POST", "GET"], "主动拉取机器人所在群")
+        reg(f"/{PLUGIN_NAME}/groups", self._api_list_groups, ["GET"], "列出已见群聊（只读搜索）")
+        reg(f"/{PLUGIN_NAME}/groups/fetch", self._api_fetch_groups, ["POST"], "主动拉取机器人所在群")
         reg(f"/{PLUGIN_NAME}/bindings", self._api_list_bindings, ["GET"], "列出绑定")
         reg(f"/{PLUGIN_NAME}/bindings/save", self._api_save_binding, ["POST"], "保存绑定")
         reg(f"/{PLUGIN_NAME}/bindings/export", self._api_export_bindings, ["GET"], "导出绑定备份")
@@ -77,56 +77,27 @@ class XbdocWebAPIMixin:
         import asyncio
         import base64
 
-        filename = ""
-        data = b""
-
-        # 1. 尝试从 base64 JSON 直传（兼容 iframe 桥接及各种跨域环境）
+        # 上传唯一链路：base64 JSON 直传（与 api.js 的 api.upload 一一对应，
+        # iframe 桥接 apiPost / 直连 fetch 共用同一条 post 通道，不再保留 multipart/form 第二套）
         try:
             payload = await request.json(default={})
-            if isinstance(payload, dict):
-                b64 = str(payload.get("file_base64") or payload.get("data") or "").strip()
-                if "," in b64:
-                    b64 = b64.split(",", 1)[1]
-                if b64:
-                    # base64 膨胀约 1/3：先卡字符串体积，避免超大包解码时吃爆内存（50MB 源文件约 68MB）
-                    if len(b64) > 70 * 1024 * 1024:
-                        return error_response("文件过大（解码后超出 50MB 上限）", status_code=400)
-                    data = base64.b64decode(b64)
-                    filename = str(payload.get("filename") or "unnamed").strip()
         except Exception:
-            data = b""
-
-        # 2. 若无 base64，尝试从 multipart/form-data 解析
-        if not data:
-            upload = None
-            try:
-                files = await request.files()
-                if isinstance(files, dict):
-                    upload = files.get("file") or files.get("files") or files.get("upload") or (next(iter(files.values())) if files else None)
-                elif hasattr(files, "filename") or hasattr(files, "read"):
-                    upload = files
-            except Exception:
-                pass
-
-            if not upload:
-                try:
-                    form = await request.form()
-                    if isinstance(form, dict):
-                        upload = form.get("file") or form.get("files") or form.get("upload") or (next(iter(form.values())) if form else None)
-                except Exception:
-                    pass
-
-            if upload is not None:
-                try:
-                    filename = getattr(upload, "filename", None) or getattr(upload, "name", None) or "unnamed"
-                    val = upload.read() if hasattr(upload, "read") else bytes(upload)
-                    if asyncio.iscoroutine(val):
-                        data = await val
-                    else:
-                        data = bytes(val) if val is not None else b""
-                except Exception:
-                    data = b""
-
+            payload = {}
+        if not isinstance(payload, dict):
+            return error_response("请求格式错误", status_code=400)
+        b64 = str(payload.get("file_base64") or "").strip()
+        if "," in b64:
+            b64 = b64.split(",", 1)[1]
+        if not b64:
+            return error_response("缺少 file_base64", status_code=400)
+        # base64 膨胀约 1/3：先卡字符串体积，避免超大包解码时吃爆内存（50MB 源文件约 68MB）
+        if len(b64) > 70 * 1024 * 1024:
+            return error_response("文件过大（解码后超出 50MB 上限）", status_code=400)
+        try:
+            data = base64.b64decode(b64)
+        except Exception:
+            return error_response("file_base64 解码失败", status_code=400)
+        filename = str(payload.get("filename") or "unnamed").strip()
         if not data:
             return error_response("未读取到上传文件内容，请重试", status_code=400)
 
@@ -181,36 +152,42 @@ class XbdocWebAPIMixin:
         return file_response(path, filename=str(meta.get("filename", "file")))
 
 
+    def _binding_entry_view(self, key: str, ent: Dict[str, Any]) -> Dict[str, Any]:
+        """绑定条目回包视图：GET /bindings 与 bindings/save 回包共用同一份构造（审计 #2）。
+
+        字段只留前端在消费的（docs 带文件名：列表与载入编辑都用它）；seen 查找：
+        完整键 -> 老格式键 -> 群裸 gid 键，逐级回落。
+        """
+        ids = ent.get("doc_ids", [])
+        kind, _plat, ident = self._split_session_key(str(key))
+        if not kind:
+            kind, _plat, ident = "group", None, str(key).strip().split(":")[-1]
+        gid = ident
+        _seen = self._seen_groups.get(str(key)) or {}
+        if not _seen:
+            _seen = self._seen_groups.get(f"{kind}:{gid}") or {}
+        if not _seen and kind == "group":
+            _seen = self._seen_groups.get(gid) or {}
+        gname = str(_seen.get("group_name") or "").strip()
+        return {
+            "gid": gid,
+            "group_name": gname,
+            "kind": kind,
+            "docs": [{"doc_id": d, "filename": self._index.get(d, {}).get("filename", d)} for d in ids],
+            "prompt": ent.get("prompt", ""),
+            "shield": bool(ent.get("shield", False)),
+            "force_system_prompt": bool(ent.get("force_system_prompt", False)),
+            "mode": str(ent.get("mode") or "reference"),
+        }
+
+
     async def _api_list_bindings(self):
         # 只读接口：用规范化副本展示，不回写（回写只发生在启动加载与保存入口，避免 GET/POST 竞态）
         _view = self._normalize_bindings(self._bindings)
-        enriched = {}
-        for k, ent in _view.items():
-            ids = ent.get("doc_ids", [])
-            kind, plat, ident = self._split_session_key(str(k))
-            if not kind:
-                kind, plat, ident = "group", None, str(k).strip().split(":")[-1]
-            gid = ident
-            # seen 查找：完整键 -> 老格式键 -> 群裸 gid 键，逐级回落
-            _seen = self._seen_groups.get(str(k)) or {}
-            if not _seen:
-                _seen = self._seen_groups.get(f"{kind}:{gid}") or {}
-            if not _seen and kind == "group":
-                _seen = self._seen_groups.get(gid) or {}
-            gname = str(_seen.get("group_name") or "").strip()
-
-            enriched[k] = {
-                "gid": gid,
-                "group_name": gname,
-                "platform": plat or str(ent.get("platform") or _seen.get("platform") or ""),
-                "kind": kind,
-                "docs": [{"doc_id": d, "filename": self._index.get(d, {}).get("filename", d)} for d in ids],
-                "prompt": ent.get("prompt", ""),
-                "shield": bool(ent.get("shield", False)),
-                "force_system_prompt": bool(ent.get("force_system_prompt", False)),
-                "mode": str(ent.get("mode") or "reference"),
-            }
-        return json_response({"bindings": enriched, "docs": self.list_documents()})
+        # 无人消费的字段已删：顶层 docs（list_documents 全量加锁排序）、条目 platform
+        return json_response({
+            "bindings": {k: self._binding_entry_view(k, ent) for k, ent in _view.items()},
+        })
 
 
     async def _api_save_binding(self):
@@ -218,7 +195,6 @@ class XbdocWebAPIMixin:
         raw_key = str(payload.get("session_key", "")).strip()
         if not raw_key:
             return error_response("缺少 session_key（例如 group:123456）", status_code=400)
-        key = self._canonical_key_str(raw_key)
         ids = payload.get("doc_ids", [])
         if not isinstance(ids, list):
             return error_response("doc_ids 须为列表", status_code=400)
@@ -228,51 +204,35 @@ class XbdocWebAPIMixin:
         if bad:
             return error_response(f"文档不存在: {', '.join(bad)}", status_code=400)
 
-        # mode 校验前移到任何内存改动之前：旧逻辑在锁内 bind/改 prompt 之后才校验并
-        # return——半提交（内存已改、_save_json 未跑），之后任意一次保存会把被拒的改动落盘
-        new_mode = None
+        # mode 校验前移到任何内存改动之前：校验不过直接 400，绝不留下半提交状态
+        fields: Dict[str, Any] = {}
         if "mode" in payload:
             new_mode = self._normalize_mode(payload.get("mode"))
             if not new_mode:
                 return error_response("未知模式，可用：workspace / system / reference / none", status_code=400)
+            fields["mode"] = new_mode
+        if "prompt" in payload:
+            fields["prompt"] = str(payload.get("prompt") or "").strip()
+        if "shield" in payload:
+            sh = payload.get("shield")
+            fields["shield"] = bool(sh) if sh is not None else False
+        if "force_system_prompt" in payload:
+            fields["force_system_prompt"] = bool(payload.get("force_system_prompt"))
+        if "ignore_history" in payload:
+            # 断史开关是解绑语义的一部分：WebUI 解绑显式传 false 才能过 prune（与聊天解绑一致）
+            fields["ignore_history"] = bool(payload.get("ignore_history"))
 
-        # 读改写加锁：WebUI 保存与聊天指令并发时不互相覆盖
-        with self._save_lock:
-            # 手填老格式按 seen 补平台限定
-            key = self._qualify_session_key(key)
-            valid = self.bind_docs(key, ids)
-            ent = self._get_entry(key)
-            if "prompt" in payload:
-                ent["prompt"] = str(payload.get("prompt") or "").strip()
-            if "shield" in payload:
-                sh = payload.get("shield")
-                ent["shield"] = bool(sh) if sh is not None else False
-            if "force_system_prompt" in payload:
-                ent["force_system_prompt"] = bool(payload.get("force_system_prompt"))
-            if "ignore_history" in payload:
-                # 断史开关是解绑语义的一部分：WebUI 解绑显式传 false 才能过 prune（与聊天解绑一致）
-                ent["ignore_history"] = bool(payload.get("ignore_history"))
-            if new_mode is not None:
-                ent["mode"] = new_mode
-            if not valid:
-                # 未绑定任何文档时模式强制回落，与聊天指令保持一致
-                ent["mode"] = "reference"
-
-            self._prune_empty_entry(key)
-            self._save_json(self.bindings_path, self._bindings)
-            # prune 可能已删除空条目，此时用孤儿 ent 回包会与实际落盘不一致，需重取
-            ent = self._bindings.get(key) or {
-                "prompt": "", "shield": False, "force_system_prompt": False,
-                "ignore_history": False, "mode": "reference",
-            }
-            resp = {
-                "ok": True, "session_key": key, "doc_ids": valid,
-                "prompt": ent.get("prompt", ""),
-                "shield": ent.get("shield", False),
-                "force_system_prompt": ent.get("force_system_prompt", False),
-                "ignore_history": bool(ent.get("ignore_history", False)),
-                "mode": ent.get("mode", "reference"),
-            }
+        # 写口在 store（锁内改内存 + 落盘一体）；回包在锁外拼
+        key, ent, valid = self.save_binding_payload(raw_key, ids, fields)
+        # save 响应即渲染（审计 #2）：回包带与 GET /bindings 同源的 entry 视图，
+        # 前端直接更新本地映射，不再保存后整表重拉；空壳被 prune 时 entry 为 null（前端据此删键）
+        resp = {
+            "ok": True,
+            "session_key": key,
+            "doc_ids": valid,
+            "ignore_history": bool(ent.get("ignore_history", False)),
+            "entry": self._binding_entry_view(key, ent) if ent else None,
+        }
         return json_response(resp)
 
 
@@ -282,10 +242,7 @@ class XbdocWebAPIMixin:
 
 
     async def _api_import_bindings(self):
-        """导入绑定备份：body 即导出的原样 map；?mode=merge（默认，合并）或 replace（整体覆盖）。
-
-        不存在的文档 id 自动跳过并回告；非法条目跳过；空壳不落盘。
-        """
+        """导入绑定备份：body 即导出的原样 map；?mode=merge（默认，合并）或 replace（整体覆盖）。"""
         payload = await request.json(default={})
         if not isinstance(payload, dict):
             return error_response("备份格式错误", status_code=400)
@@ -294,48 +251,8 @@ class XbdocWebAPIMixin:
             return error_response("mode 须为 merge 或 replace", status_code=400)
         if len(payload) > 2000:
             return error_response("备份会话过多（>2000），请分批导入", status_code=400)
-
-        applied, skipped_docs, skipped_keys = 0, [], []
-        with self._save_lock:
-            if mode == "replace":
-                self._bindings = {}
-            for k, v in payload.items():
-                if not isinstance(v, dict):
-                    skipped_keys.append(str(k))
-                    continue
-                ck = self._canonical_key_str(str(k))
-                if not ck:
-                    skipped_keys.append(str(k))
-                    continue
-                raw_ids = v.get("doc_ids") or []
-                if not isinstance(raw_ids, list):
-                    raw_ids = []
-                docs = [str(d).strip() for d in raw_ids if str(d).strip()]
-                kept = [d for d in docs if d in self._index]
-                skipped_docs.extend(d for d in docs if d not in self._index)
-                new_ent = {
-                    "doc_ids": kept,
-                    "prompt": str(v.get("prompt") or "").strip(),
-                    "shield": bool(v.get("shield", False)),
-                    "force_system_prompt": bool(v.get("force_system_prompt", False)),
-                    "mode": self._normalize_mode(v.get("mode")) or "reference",
-                    "ignore_history": bool(v.get("ignore_history", False)),
-                }
-                if not kept:
-                    new_ent["mode"] = "reference"
-                if ck in self._bindings:
-                    self._merge_entries(self._bindings[ck], new_ent)
-                else:
-                    self._bindings[ck] = new_ent
-                self._prune_empty_entry(ck)
-                if ck in self._bindings:
-                    applied += 1
-            self._save_json(self.bindings_path, self._bindings)
-        return json_response({
-            "ok": True, "mode": mode, "applied": applied,
-            "skipped_docs": sorted(set(skipped_docs)),
-            "skipped_keys": skipped_keys,
-        })
+        # 校验在 Web 层，合并/回落/prune/落盘统一走 store 写口
+        return json_response(self.import_bindings(payload, mode))
 
 
     def _find_all_bots(self) -> List[Any]:
@@ -539,7 +456,7 @@ class XbdocWebAPIMixin:
             seen_key = f"group:{item['platform']}:{gid}" if item.get("platform") else gid
             ent = self._seen_groups.setdefault(seen_key, {
                 "gid": gid, "group_name": item["group_name"], "platform": item["platform"],
-                "first_seen": now, "last_seen": now, "msg_count": 0,
+                "last_seen": now, "msg_count": 0,
             })
             if item["group_name"]:
                 ent["group_name"] = item["group_name"]
@@ -630,38 +547,29 @@ class XbdocWebAPIMixin:
 
 
     async def _api_fetch_groups(self):
+        """主动拉取群（群列表的唯一刷新入口，前端只发这一枪）。"""
         try:
             fetched, diag = await self._fetch_platform_groups()
-            all_groups = self._get_all_merged_groups("", 200)
             return json_response({
                 "ok": True,
                 "new_fetched": len(fetched),
-                "count": len(all_groups),
-                "groups": all_groups,
+                "groups": self._get_all_merged_groups("", 200),
                 "debug": diag,
             })
         except Exception as e:
             logger.warning(f"[{PLUGIN_NAME}] 主动拉取机器人群列表失败: {e}")
-            all_groups = self._get_all_merged_groups("", 200)
+            # 失败原因已进 debug（fetch crashed + 类型/原文），无人消费的 count/warning 已删
             return json_response({
                 "ok": True,
                 "new_fetched": 0,
-                "count": len(all_groups),
-                "groups": all_groups,
-                "warning": str(e),
+                "groups": self._get_all_merged_groups("", 200),
                 "debug": {"bots": -1, "details": [f"fetch crashed: {type(e).__name__}: {e}"]},
             })
 
 
     async def _api_list_groups(self):
-        refresh = (request.query.get("refresh", "") or "").strip().lower()
-        if refresh in ("1", "true", "yes"):
-            try:
-                await self._fetch_platform_groups()
-            except Exception:
-                pass
-
+        """群列表只读搜索（刷新统一走 POST /groups/fetch，原 refresh 查询参数双路已删）。"""
         q = (request.query.get("q", "") or "").strip().lower()
         limit = max(1, min(request.query.get("limit", 60, type=int), 300))
         items = self._get_all_merged_groups(q, limit)
-        return json_response({"groups": items, "total": len(items)})
+        return json_response({"groups": items})

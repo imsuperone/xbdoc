@@ -4,7 +4,7 @@
 
 -   📦 项目主页：[https://github.com/imsuperone/xbdoc](https://github.com/imsuperone/xbdoc)
 -   🔌 插件 ID：`astrbot_plugin_xbdoc`
--   📌 版本：`v1.2.19`，要求 AstrBot `>=4.16`
+-   📌 版本：`v1.2.20`，要求 AstrBot `>=4.16`
 
 ---
 
@@ -160,14 +160,14 @@ ABCD 式过度拆分，也没有空转包装层**。以下为测绘出的数据�
 | # | 事实 | 位置 | 收敛 |
 | --- | --- | --- | --- |
 | 1 | ✅ **已修 v1.2.19**：WebUI 解绑与聊天解绑语义分叉——`bindings/save` 现支持 `ignore_history`（解绑载荷显式清），聊天 `/xbdoc unbind` 留空改为按 keys 全清（无文档但有提示词/开关也恢复出厂，此前漏清） | `webapi.py` save 字段块、`app.js` 解绑载荷、`commands.py` doc_unbind 留空分支 | 回归测试 `test_unbind_semantics_web_and_prompt_only`（表单保存不动断史 / 解绑清断史并 prune / 提示词独条恢复出厂） |
-| 2 | 保存→丢弃→重拉：`bindings/save` 返回完整条目客户端不用，立刻重取；`GET /bindings` 还算了无人消费的 `docs`（含 `list_documents()` 全量加锁排序） | `app.js:1264-1268`、`webapi.py:213`、`app.js:621` | save 响应即渲染，删多余字段 |
-| 3 | 绑定写口不统一：`bindings.json` 落盘 16 处（10 处在 store 外）、条目直改 28 处 | `_save_json(bindings_path)`：`commands.py`×8、`webapi.py`×2、`store.py`×6 | 统一经 store 方法 |
-| 4 | 「无文档 ⇒ 模式回落 reference」规则写 5 处 | `app.js:1252`、`webapi.py:254,319`、`store.py:1010,551` | 只留 store 一处 |
-| 5 | 会话 Key 归一后端 7 实现 + 前端 2 实现 | `store.py:665,678,707,812,848,934,873`、`app.js:992,1222` | 只留 store 一份 |
-| 6 | `/groups` 与 `/groups/fetch` 干同一件事，客户端还写了主备两连 | `webapi.py:651` vs `:627`、`app.js:941-945` | 合一条 |
-| 7 | 上传 3 传输 × 3 解析（base64 / multipart files / form） | `webapi.py:84-117`、`api.js:156-198` | 留 multipart 一条 |
-| 8 | handler 已持 `_save_lock` 又调 `@_locked` 方法（RLock 重入，无意义加锁）并持锁拼回复字符串 | `commands.py:190→196`、`webapi.py:240→243` | 锁只护状态改写 |
-| 9 | 一条查询做 2-3 次完整会话解析 | `commands.py:89-91`、`store.py:947` | 一次解析取全部字段 |
-| 10 | `doc_shield` 与 `doc_force` 逐行同构（各 24 行）；status / prompt / workspace 三处重拼同一状态 | `commands.py:442` vs `:468`；`:87/:319/:138` | 参数化合一、一个 `render_status()` |
-| 11 | 死字段写而未读：`has_entry`、`first_seen`、`size`、`docs`、`platform`、`total`、`count`、`warning` | `store.py:964`、`webapi.py:213,205,662,634,646` | 删 |
-| 12 | 热路径锁竞争：消息注入的缓存命中也要取放 `_save_lock`；上传 / 配置保存在锁内做磁盘写与批量 unlink | `store.py:571,626`、`:489,502,516`、`:1120-1124` | 锁内只护内存态，磁盘 I/O 出锁 |
+| 2 | ✅ **已修 v1.2.20**：save 回包改带与 `GET /bindings` 同源的 `entry`（prune 时 null），前端直更 `bindingsMap`→`renderBindings()` 即渲染，删「保存→丢弃→重拉」；顶层 `docs`/`platform` 无人消费字段删除 | `app.js:1246-1279`、`webapi.py:213`、`app.js:621` | save 响应即渲染，删多余字段 |
+| 3 | ✅ **已修 v1.2.20**：`bindings.json` 全部写口收归 store 唯一实现（`bind_docs_report`/`save_binding_payload`/`unbind_docs`/`set_session_prompt`/`set_session_flag`），commands 裸落盘与行级锁归零、回复出锁拼 | `_save_json(bindings_path)`：`commands.py`×8、`webapi.py`×2、`store.py`×6 | 统一经 store 方法 |
+| 4 | ✅ **已修 v1.2.20**：唯一回落 `store._effective_mode`（保存/导入/删文档/`_factory_reset`/状态读取全走），前端复写规则删除 | `app.js:1252`、`webapi.py:254,319`、`store.py:1010,551` | 只留 store 一处 |
+| 5 | ✅ **已修 v1.2.20**：后端归一 store 单实现；前端两处认领合并为 `claimBindingKey`（tie-break：精确键 → group → private → 任意尾段 → 保存路径纯数字补前缀），两调用点不再互相矛盾 | `store.py:665,678,707,812,848,934,873`、`app.js:992,1222` | 只留 store 一份 |
+| 6 | ✅ **已修 v1.2.20**：唯一刷新入口 `POST groups/fetch`，删主备两连 fallback；`GET /groups` 降为只读搜索（docstring 同步） | `webapi.py:651` vs `:627`、`app.js:941-945` | 合一条 |
+| 7 | ✅ **已修 v1.2.20**：base64-only 单链定案——方向列「留 multipart 一条」被实测约束否决（iframe 跨域表单对象克隆失效是实测 bug，决策记录入 `api.js` 注释），删 FormData/多前缀探测/静默 fallback，50MB 上限保留，失败细分报错 | `webapi.py:84-117`、`api.js:156-198` | 留 multipart 一条 |
+| 8 | ✅ **已修 v1.2.20**：commands 8 处行级锁与 `@_locked` 重入嵌套归零——读判在锁外（展示性预读）、写口锁内改+落盘、回复一律出锁拼 | `commands.py:190→196`、`webapi.py:240→243` | 锁只护状态改写 |
+| 9 | ✅ **已修 v1.2.20**：`_state_of` 单次解析取全部字段，status/workspace/prompt 三指令共用 `_render_state(variant)` 渲染（prompt 变体本批接入） | `commands.py:89-91`、`store.py:947` | 一次解析取全部字段 |
+| 10 | ✅ **已修 v1.2.20**：`_toggle_flag_cmd` 参数化骨架合一（读-判-写同构、两分支文案逐字保留）；status/prompt/workspace 接共享 `_render_state`（`doc_prompt` 为 prompt 变体首个调用方） | `commands.py:442` vs `:468`；`:87/:319/:138` | 参数化合一、一个 `render_status()` |
+| 11 | ✅ **已修 v1.2.20**：死字段全删（`has_entry`/`first_seen`/`size`/`docs`/`total`/`count`/`warning` grep 归零；`platform` 仅余 seen-groups 功能字段），save 回包裸字段并入 `entry` | `store.py:964`、`webapi.py:213,205,662,634,646` | 删 |
+| 12 | ✅ **已修 v1.2.20**：锁内只护内存态+小 JSON——`delete_document`/`_invalidate_chunk_caches` 批量 unlink 出锁，`save_plugin_config` 改显式锁且 config 生效后再作废缓存；上传主 I/O 本就在锁外 | `store.py:571,626`、`:489,502,516`、`:1120-1124` | 锁内只护内存态，磁盘 I/O 出锁 |
