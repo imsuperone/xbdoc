@@ -215,19 +215,48 @@
   // 调用方语义处理：默认返回 ""（选择/载入语义：miss 不认领）；传 { claimPrefix: "group:" }
   // （保存路径）时，纯数字输入补前缀成为新 key。群聊/私聊前缀都不命中的尾段匹配（如
   // 老脏键 xxx:123）同样认领——与原 findBindingKey 一致，保存不再另起炉灶写第二个 key。
-  function claimBindingKey(v, opts) {
-    const s = (v || "").trim();
+  const _ONEBOT_ALIASES = new Set([
+    "aiocqhttp", "aihttpcq", "cqhttp", "napcat", "llonebot",
+    "lagrange", "gocqhttp", "onebot_v11", "qq"
+  ]);
+
+  function normalizeSessionKeyClient(rawKey) {
+    const s = String(rawKey || "").trim();
     if (!s) return "";
+    if (/webchat|probe/i.test(s)) return "";
+    const parts = s.split(":");
+    if (parts.length === 3 && (parts[0] === "group" || parts[0] === "private")) {
+      let plat = parts[1].trim().toLowerCase();
+      const ident = parts[2].trim();
+      if (!ident || /probe/i.test(ident)) return "";
+      if (parts[0] === "private" && !/^\d+$/.test(ident)) return "";
+      if (_ONEBOT_ALIASES.has(plat)) plat = "onebot";
+      return `${parts[0]}:${plat}:${ident}`;
+    }
+    if (parts.length === 2 && (parts[0] === "group" || parts[0] === "private")) {
+      const ident = parts[1].trim();
+      if (!ident || /probe/i.test(ident)) return "";
+      if (parts[0] === "private" && !/^\d+$/.test(ident)) return "";
+      return `${parts[0]}:${ident}`;
+    }
+    return s;
+  }
+
+  function claimBindingKey(v, opts) {
+    const raw = (v || "").trim();
+    if (!raw) return "";
+    const s = normalizeSessionKeyClient(raw) || raw;
     if (bindingsMap[s]) return s;
+    const tail = s.split(":").pop();
     const keys = Object.keys(bindingsMap);
-    const tailEq = (k) => String(k || "").split(":").pop() === s;
+    const tailEq = (k) => String(k || "").split(":").pop() === tail;
     const grp = keys.find((k) => k.startsWith("group:") && tailEq(k));
     if (grp) return grp;
     const priv = keys.find((k) => k.startsWith("private:") && tailEq(k));
     if (priv) return priv;
     const anyHit = keys.find(tailEq);
     if (anyHit) return anyHit;
-    if (opts && opts.claimPrefix && /^\d{5,}$/.test(s)) return opts.claimPrefix + s;
+    if (opts && opts.claimPrefix && /^\d{5,}$/.test(raw)) return opts.claimPrefix + "onebot:" + raw;
     return "";
   }
 
@@ -641,7 +670,37 @@
   async function loadBindings() {
     try {
       const res = await api.get("bindings");
-      bindingsMap = res.bindings || {};
+      const rawMap = res.bindings || {};
+      const cleanMap = {};
+      Object.keys(rawMap).forEach((rawKey) => {
+        const nk = normalizeSessionKeyClient(rawKey);
+        if (!nk) return;
+        const entry = rawMap[rawKey];
+        if (!entry || typeof entry !== "object") return;
+        if (!cleanMap[nk]) {
+          cleanMap[nk] = entry;
+        } else {
+          // 合并同群多平台旧记录
+          const prev = cleanMap[nk];
+          const prevDocs = Array.isArray(prev.docs) ? prev.docs : [];
+          const curDocs = Array.isArray(entry.docs) ? entry.docs : [];
+          const seenIds = new Set(prevDocs.map((d) => d.doc_id || d));
+          curDocs.forEach((d) => {
+            const id = d.doc_id || d;
+            if (!seenIds.has(id)) {
+              seenIds.add(id);
+              prevDocs.push(d);
+            }
+          });
+          prev.docs = prevDocs;
+          if (!prev.group_name && entry.group_name) prev.group_name = entry.group_name;
+          if (!prev.prompt && entry.prompt) prev.prompt = entry.prompt;
+          prev.shield = Boolean(prev.shield || entry.shield);
+          prev.force_system_prompt = Boolean(prev.force_system_prompt || entry.force_system_prompt);
+          if ((!prev.mode || prev.mode === "none") && entry.mode) prev.mode = entry.mode;
+        }
+      });
+      bindingsMap = cleanMap;
       renderBindings();
     } catch (e) {
       console.error("[DocMemory] loadBindings error:", e);
@@ -925,38 +984,53 @@
 
     const searchEl = $("groupTableSearch");
     const kw = searchEl && searchEl.value ? searchEl.value.trim().toLowerCase() : "";
-    const curSelKey = ($("sessionKey") && $("sessionKey").value ? $("sessionKey").value.trim() : "");
+    const rawCurSel = ($("sessionKey") && $("sessionKey").value ? $("sessionKey").value.trim() : "");
+    const curSelKey = normalizeSessionKeyClient(rawCurSel) || rawCurSel;
 
-    const merged = [];
-    const seenKeys = new Set();
+    const byDedup = new Map();
 
     (groupsCache || []).forEach((g) => {
-      const key = String(g.session_key || ("group:" + g.gid));
-      if (!key || seenKeys.has(key)) return;
-      seenKeys.add(key);
-      merged.push({
-        session_key: key,
-        gid: String(g.gid || ""),
-        group_name: String(g.group_name || ""),
-        platform: String(g.platform || ""),
-        kind: String(g.kind || "group"),
-        bound: Boolean(g.bound || bindingsMap[key]),
+      const rawKey = String(g.session_key || ("group:onebot:" + g.gid));
+      const key = normalizeSessionKeyClient(rawKey);
+      if (!key) return;
+      const kind = String(g.kind || (key.startsWith("private:") ? "private" : "group"));
+      const gid = String(g.gid || key.split(":").pop() || "");
+      if (!gid || /probe|webchat/i.test(gid)) return;
+      if (kind === "private" && !/^\d+$/.test(gid)) return;
+      const dedupId = `${kind}:${gid}`;
+      const prev = byDedup.get(dedupId);
+      const isBound = Boolean(g.bound || bindingsMap[key] || bindingsMap[`${kind}:${gid}`] || (prev && prev.bound));
+      byDedup.set(dedupId, {
+        session_key: bindingsMap[key] ? key : (bindingsMap[`${kind}:${gid}`] ? `${kind}:${gid}` : (prev && prev.bound ? prev.session_key : key)),
+        gid: gid,
+        group_name: String(g.group_name || (prev && prev.group_name) || ""),
+        platform: "onebot",
+        kind: kind,
+        bound: isBound,
       });
     });
 
-    Object.keys(bindingsMap || {}).forEach((key) => {
-      if (seenKeys.has(key)) return;
-      seenKeys.add(key);
-      const b = bindingsMap[key] || {};
-      merged.push({
-        session_key: key,
-        gid: String(b.gid || key.split(":").pop() || ""),
-        group_name: String(b.group_name || ""),
-        platform: String(b.platform || ""),
-        kind: String(b.kind || (key.startsWith("private:") ? "private" : "group")),
+    Object.keys(bindingsMap || {}).forEach((rawKey) => {
+      const key = normalizeSessionKeyClient(rawKey);
+      if (!key) return;
+      const b = bindingsMap[rawKey] || bindingsMap[key] || {};
+      const kind = String(b.kind || (key.startsWith("private:") ? "private" : "group"));
+      const gid = String(b.gid || key.split(":").pop() || "");
+      if (!gid || /probe|webchat/i.test(gid)) return;
+      if (kind === "private" && !/^\d+$/.test(gid)) return;
+      const dedupId = `${kind}:${gid}`;
+      const prev = byDedup.get(dedupId);
+      byDedup.set(dedupId, {
+        session_key: rawKey in bindingsMap ? rawKey : key,
+        gid: gid,
+        group_name: String(b.group_name || (prev && prev.group_name) || ""),
+        platform: "onebot",
+        kind: kind,
         bound: true,
       });
     });
+
+    const merged = Array.from(byDedup.values());
 
     const filtered = merged.filter((g) => {
       if (!kw) return true;
@@ -971,15 +1045,15 @@
     });
 
     if (!filtered.length) {
-      wrap.innerHTML = `<div class="empty-state" style="padding:20px 12px;"><p>${kw ? "未找到匹配的群聊或会话" : "暂未获取到群聊列表，可点击右上角「刷新机器人群列表」或在右侧输入框直接填写群号"}</p></div>`;
+      wrap.innerHTML = `<div class="empty-state" style="padding:20px 12px;"><p>${kw ? "未找到匹配的群聊或会话" : "暂未获取到群聊列表，可点击右上角「刷新机器人群列表」或在下方输入框直接填写群号"}</p></div>`;
       return;
     }
 
     const rowsHtml = filtered.map((g) => {
       const isPrivate = g.kind === "private" || g.session_key.startsWith("private:");
       const nameText = g.group_name || ((isPrivate ? "私聊 " : "群聊 ") + (g.gid || g.session_key));
-      const isSelected = curSelKey && curSelKey === g.session_key;
-      const bEntry = bindingsMap[g.session_key];
+      const isSelected = Boolean(curSelKey && (curSelKey === g.session_key || curSelKey.split(":").pop() === g.gid));
+      const bEntry = bindingsMap[g.session_key] || bindingsMap[`${g.kind}:onebot:${g.gid}`] || bindingsMap[`${g.kind}:${g.gid}`];
       const docCount = bEntry && Array.isArray(bEntry.docs) ? bEntry.docs.length : 0;
       const hasPrompt = bEntry && Boolean((bEntry.prompt || "").trim());
       const hasShield = bEntry && Boolean(bEntry.shield);
@@ -996,7 +1070,7 @@
       return `
         <tr class="${isSelected || g.bound ? "is-enabled" : ""}" data-select-key="${esc(g.session_key)}">
           <td class="group-cell-name">${esc(nameText)}</td>
-          <td class="group-cell-id">${esc(g.gid ? `${g.gid} (${g.session_key})` : g.session_key)}</td>
+          <td class="group-cell-id" title="${esc(g.session_key)}">${esc(g.gid || g.session_key)}</td>
           <td>${statusBadges}</td>
           <td class="group-cell-action">
             <button type="button" class="m3-btn ${isSelected ? "primary-btn" : "secondary-btn"} m3-btn-sm" data-select-key="${esc(g.session_key)}">
@@ -1026,22 +1100,36 @@
     const box = $("suggestDropdown");
     if (!box) return;
 
-    if (!list || !list.length) {
+    const cleanList = [];
+    const seenDedup = new Set();
+    (list || []).forEach((g) => {
+      const sk = normalizeSessionKeyClient(g.session_key || ("group:onebot:" + g.gid));
+      if (!sk) return;
+      const kind = g.kind || (sk.startsWith("private:") ? "private" : "group");
+      const gid = String(g.gid || sk.split(":").pop() || "");
+      if (!gid || /probe|webchat/i.test(gid)) return;
+      const dedup = `${kind}:${gid}`;
+      if (seenDedup.has(dedup)) return;
+      seenDedup.add(dedup);
+      cleanList.push(Object.assign({}, g, { session_key: sk, gid: gid, platform: "onebot" }));
+    });
+
+    if (!cleanList.length) {
       box.classList.remove("open");
       box.innerHTML = "";
       return;
     }
 
-    box.innerHTML = list.slice(0, 15).map((g) => {
+    box.innerHTML = cleanList.slice(0, 15).map((g) => {
       const isPrivate = g.kind === "private";
       const firstLetter = (g.group_name || g.gid || (isPrivate ? "私" : "群")).charAt(0).toUpperCase();
       return `
-        <div class="suggest-card" data-key="${esc(g.session_key || ('group:' + g.gid))}">
+        <div class="suggest-card" data-key="${esc(g.session_key || ('group:onebot:' + g.gid))}">
           <div style="display:flex; align-items:center;">
             <div class="suggest-avatar">${esc(firstLetter)}</div>
             <div class="suggest-info">
               <strong>${esc(g.group_name || ((isPrivate ? "私聊 " : "群聊 ") + g.gid))}</strong>
-              <span>${esc(g.platform ? g.platform + ' · ' : '')}${isPrivate ? "私聊 UID" : "群号"}: ${esc(g.gid)} ${g.msg_count ? ' · ' + esc(g.msg_count) + '条发言' : ''}</span>
+              <span>${isPrivate ? "私聊 UID" : "群号"}: ${esc(g.gid)} ${g.msg_count ? ' · ' + esc(g.msg_count) + '条发言' : ''}</span>
             </div>
           </div>
           ${g.bound ? '<span class="badge-pill" style="background:var(--m3-sys-color-primary-container); color:var(--m3-sys-color-primary); font-weight:600;">已绑定</span>' : '<span class="badge-pill">选择</span>'}

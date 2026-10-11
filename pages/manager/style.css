@@ -1216,6 +1216,8 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
 .group-switch-table-wrap {
   max-height: 280px;
   overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--m3-sys-color-divider);
   border-radius: var(--m3-radius-medium);
   background: var(--m3-sys-color-surface-container);
@@ -1800,10 +1802,59 @@ code.mono {
     gap: 10px;
   }
 
+  .card-row-split:has(> .m3-switch),
+  .m3-switch-row:has(> .m3-switch) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
   .m3-switch-row {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
+  }
+
+  .group-switch-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .group-search-input,
+  .group-add-inline {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .group-switch-table th,
+  .group-switch-table td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .group-cell-name {
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .group-cell-id {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .group-cell-action {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .group-cell-action .m3-btn {
+    padding: 5px 10px;
+    font-size: 12px;
+    min-height: 30px;
   }
 
   .segmented-choice {

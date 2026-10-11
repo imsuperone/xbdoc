@@ -9,7 +9,7 @@ desc: |
   - 关键词与 BM25 检索，纯内存计算，不依赖 Embedding 模型
   - 群专属提示词、屏蔽原人格、历史切断
   - 数据持久化在 data/plugin_data/astrbot_plugin_xbdoc
-version: 1.2.26
+version: 1.2.27
 author: Light
 repo: https://github.com/imsuperone/xbdoc
 astrbot_version: ">=4.16"

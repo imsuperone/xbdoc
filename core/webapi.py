@@ -165,9 +165,16 @@ class XbdocWebAPIMixin:
         gid = ident
         _seen = self._seen_groups.get(str(key)) or {}
         if not _seen:
+            _seen = self._seen_groups.get(f"{kind}:onebot:{gid}") or {}
+        if not _seen:
             _seen = self._seen_groups.get(f"{kind}:{gid}") or {}
         if not _seen and kind == "group":
             _seen = self._seen_groups.get(gid) or {}
+        if not _seen and gid:
+            for _sk, _sv in (self._seen_groups or {}).items():
+                if isinstance(_sv, dict) and str(_sv.get("gid") or "") == gid:
+                    _seen = _sv
+                    break
         gname = str(_seen.get("group_name") or "").strip()
         return {
             "gid": gid,
@@ -186,7 +193,11 @@ class XbdocWebAPIMixin:
         _view = self._normalize_bindings(self._bindings)
         # 无人消费的字段已删：顶层 docs（list_documents 全量加锁排序）、条目 platform
         return json_response({
-            "bindings": {k: self._binding_entry_view(k, ent) for k, ent in _view.items()},
+            "bindings": {
+                k: self._binding_entry_view(k, ent)
+                for k, ent in _view.items()
+                if self._is_sane_key(k)
+            },
         })
 
 
@@ -257,33 +268,43 @@ class XbdocWebAPIMixin:
 
     def _find_all_bots(self) -> List[Any]:
         """定位平台适配器：优先走官方 platform_manager.platform_insts，其次事件缓存，最后有界泛遍历。"""
-        try:  # 定位结果缓存 5 分钟：fallback 遍历较重，实例列表极少变化
+        import functools
+        try:  # 定位结果缓存 60 秒
             _cached = getattr(self, "_bots_cache", None) or {}
-            if _cached.get("targets") and (time.time() - float(_cached.get("ts", 0))) < 300:
+            if _cached.get("targets") and (time.time() - float(_cached.get("ts", 0))) < 60:
                 return list(_cached["targets"])
         except Exception:
             pass
         targets: List[Any] = []
         added: set = set()
 
+        def _safe_getattr(obj: Any, attr: str) -> Any:
+            if obj is None:
+                return None
+            try:
+                # 防止 aiocqhttp.CQHttp.__getattr__ 对任意属性返回 functools.partial(call_action, attr)
+                val = getattr(obj, attr, None)
+                if isinstance(val, functools.partial):
+                    return None
+                return val
+            except Exception:
+                return None
+
         def _add(obj) -> None:
-            if obj is None or id(obj) in added:
+            if obj is None or isinstance(obj, functools.partial) or id(obj) in added:
                 return
-            if any(callable(getattr(obj, m, None)) for m in ("call_action", "call_api", "get_group_list")):
+            if any(callable(_safe_getattr(obj, m)) for m in ("call_action", "call_api", "get_group_list")):
                 added.add(id(obj))
                 targets.append(obj)
 
         def _add_with_inner(obj) -> None:
-            if obj is None:
+            if obj is None or isinstance(obj, functools.partial):
                 return
             _add(obj)
-            for sub in ("bot", "client", "_bot", "_client"):
-                try:
-                    _add(getattr(obj, sub, None))
-                except Exception:
-                    pass
+            for sub in ("bot", "client", "_bot", "_client", "api"):
+                _add(_safe_getattr(obj, sub))
             try:
-                gc = getattr(obj, "get_client", None)
+                gc = _safe_getattr(obj, "get_client")
                 if callable(gc):
                     _add(gc())
             except Exception:
@@ -316,13 +337,13 @@ class XbdocWebAPIMixin:
             self._bots_cache = {"targets": list(targets), "ts": time.time()}
             return targets
 
-        # 3. 兜底：有界泛遍历（官方通道与事件缓存都 miss 才走；预算给足，宁可慢一次也不漏适配器）
+        # 3. 兜底：有界泛遍历
         import inspect
         visited: set = set()
         budget = [800]
 
         def _traverse(obj, depth=0):
-            if depth > 4 or obj is None or budget[0] <= 0:
+            if depth > 4 or obj is None or isinstance(obj, functools.partial) or budget[0] <= 0:
                 return
             oid = id(obj)
             if oid in visited:
@@ -340,10 +361,7 @@ class XbdocWebAPIMixin:
                 lower = attr.lower()
                 if not any(k in lower for k in ("platform", "adapter", "bot", "client", "connection", "ws", "manager", "inst")):
                     continue
-                try:
-                    val = getattr(obj, attr, None)
-                except Exception:
-                    continue
+                val = _safe_getattr(obj, attr)
                 if val is None or callable(val) or inspect.isclass(val):
                     continue
                 if isinstance(val, (list, tuple, set)):
@@ -364,57 +382,81 @@ class XbdocWebAPIMixin:
 
 
     async def _fetch_platform_groups(self):
-        """主动向平台适配器拉取群组（多适配器并发、整体超时熔断）。
-
-        返回 (groups, diag)：diag 记录适配器个数与每个动作的结果摘要，
-        拉不到群时看日志/回包 debug 即可定位（0 适配器/超时/空返回/异常原文）。
-        """
+        """主动向平台适配器拉取群组（顺序尝试标准动作，避免向 CQHttp 并发轰炸不存在的 action 导致超时）。"""
         import asyncio
+        import functools
         found_groups: Dict[str, Dict[str, Any]] = {}
         bots = self._find_all_bots()
         diag: List[str] = [f"adapters={len(bots)}"] + [
             f"bot[{i}]={type(b).__name__}" for i, b in enumerate(bots[:5])
         ]
 
-        actions = ["get_group_list", "getGroupList", "get_groups", "list_groups", "get_joined_groups"]
+        actions = ["get_group_list", "getGroupList", "get_groups", "list_groups"]
 
-        async def _call(cand, act):
-            pname = str(getattr(cand, "platform_name", "") or getattr(cand, "name", "") or "?")
-            try:
-                if callable(getattr(cand, "call_action", None)):
-                    r = await asyncio.wait_for(cand.call_action(act), timeout=5)
-                elif callable(getattr(cand, "call_api", None)):
-                    r = await asyncio.wait_for(cand.call_api(act), timeout=5)
+        def _bot_plat_name(cand: Any) -> str:
+            for attr in ("platform_name", "name"):
+                try:
+                    v = getattr(cand, "__dict__", {}).get(attr)
+                    if isinstance(v, str) and v.strip():
+                        return self._clean_platform(v) or "onebot"
+                except Exception:
+                    pass
+            return "onebot"
+
+        def _extract_group_list(r: Any) -> List[Dict[str, Any]]:
+            if isinstance(r, dict):
+                for k in ("data", "groups", "list"):
+                    if isinstance(r.get(k), list):
+                        r = r[k]
+                        break
                 else:
-                    fn = getattr(cand, act, None)
-                    if not callable(fn):
-                        return None
-                    r = await asyncio.wait_for(fn(), timeout=5)
-                n = -1
-                if isinstance(r, dict):
-                    d = r.get("data", r)
-                    n = len(d) if isinstance(d, list) else -1
-                elif isinstance(r, list):
-                    n = len(r)
-                diag.append(f"{pname}.{act}: ok(n={n})")
-                return r
-            except Exception as e:
-                diag.append(f"{pname}.{act}: {type(e).__name__}: {str(e)[:120]}")
-                return None
+                    return []
+            if isinstance(r, list):
+                return [x for x in r if isinstance(x, dict)]
+            return []
 
-        async def _try_bot(cand):
+        async def _try_bot(cand: Any):
+            pname = _bot_plat_name(cand)
+            btype = type(cand).__name__
+            # 1. 直接方法 get_group_list（非 partial）
             try:
-                results = await asyncio.gather(*[_call(cand, act) for act in actions], return_exceptions=True)
-            except Exception:
-                results = []
-            return (cand, results)
+                fn = getattr(cand, "get_group_list", None)
+                if callable(fn) and not isinstance(fn, functools.partial):
+                    r = await asyncio.wait_for(fn(), timeout=8.0)
+                    glist = _extract_group_list(r)
+                    if glist:
+                        diag.append(f"{btype}.get_group_list: ok(n={len(glist)})")
+                        return (pname, glist)
+            except Exception as e:
+                diag.append(f"{btype}.get_group_list: {type(e).__name__}: {str(e)[:80]}")
 
-        # 全体并发 + 整体 18 秒熔断（超时自动取消子任务）；多适配器结果合并，不再首个成功即停
+            # 2. call_action / call_api 顺序尝试（拿到非空列表即止，绝不并发轰炸无效动作）
+            for caller_name in ("call_action", "call_api"):
+                caller = getattr(cand, caller_name, None)
+                if not callable(caller) or isinstance(caller, functools.partial):
+                    continue
+                for act in actions:
+                    try:
+                        r = await asyncio.wait_for(caller(act), timeout=8.0)
+                        glist = _extract_group_list(r)
+                        diag.append(f"{btype}.{act}: ok(n={len(glist)})")
+                        if glist:
+                            return (pname, glist)
+                        # OneBot 标准 get_group_list 已成功返回空列表时无需再试非标动作
+                        if act == "get_group_list" and isinstance(r, (list, dict)):
+                            break
+                    except Exception as e:
+                        diag.append(f"{btype}.{act}: {type(e).__name__}: {str(e)[:80]}")
+                        # 如果是超时，同一连接后续非标动作也会超时，直接跳出
+                        if isinstance(e, asyncio.TimeoutError) or "Timeout" in type(e).__name__:
+                            break
+            return (pname, [])
+
         per_bot: List[Any] = []
         try:
             per_bot = await asyncio.wait_for(
                 asyncio.gather(*[_try_bot(b) for b in bots[:5]], return_exceptions=True),
-                timeout=18,
+                timeout=15.0,
             )
         except Exception:
             per_bot = []
@@ -422,59 +464,52 @@ class XbdocWebAPIMixin:
         for item in per_bot:
             if not (isinstance(item, tuple) and len(item) == 2):
                 continue
-            cand, results = item
-            if not isinstance(results, list):
+            p_name, glist = item
+            p_name = self._clean_platform(p_name) or "onebot"
+            if not isinstance(glist, list):
                 continue
-            # 平台名同样走清洗：适配器对象上的 platform_name 可能是 partial 之类非字符串，
-            # 直接 str() 会产生垃圾并污染 seen（历史教训），非法则回落 onebot
-            try:
-                p_name = self._clean_platform(
-                    getattr(cand, "platform_name", "") or getattr(cand, "name", "")) or "onebot"
-            except Exception:
-                p_name = "onebot"
-            for info in results:
-                if not isinstance(info, (dict, list)):
+            for g in glist:
+                if not isinstance(g, dict):
                     continue
-                data = (info.get("data") if isinstance(info, dict) else None) or info or []
-                if isinstance(data, list) and data and isinstance(data[0], dict):
-                    for g in data:
-                        if not isinstance(g, dict):
-                            continue
-                        gid = str(g.get("group_id") or g.get("gid") or g.get("id") or "").strip()
-                        if not gid:
-                            continue
-                        gname = str(g.get("group_name") or g.get("name") or g.get("title") or "").strip()
-                        try:
-                            m_count = int(g.get("member_count") or g.get("members_count") or 0)
-                        except Exception:
-                            m_count = 0
-                        # 平台+群号双键：跨平台同号群各自保留，不再互相覆盖
-                        fkey = f"{p_name}:{gid}"
-                        if fkey in found_groups:
-                            continue
-                        found_groups[fkey] = {
-                            "gid": gid,
-                            "group_name": gname,
-                            "member_count": m_count,
-                            "platform": p_name,
-                            "last_seen": int(time.time()),
-                            "msg_count": 0,
-                        }
+                gid = str(g.get("group_id") or g.get("gid") or g.get("id") or "").strip()
+                if not gid:
+                    continue
+                gname = str(g.get("group_name") or g.get("name") or g.get("title") or "").strip()
+                try:
+                    m_count = int(g.get("member_count") or g.get("members_count") or 0)
+                except Exception:
+                    m_count = 0
+                fkey = f"{p_name}:{gid}"
+                if fkey in found_groups:
+                    continue
+                found_groups[fkey] = {
+                    "gid": gid,
+                    "group_name": gname,
+                    "member_count": m_count,
+                    "platform": p_name,
+                    "last_seen": int(time.time()),
+                    "msg_count": 0,
+                }
 
         now = int(time.time())
         for _fkey, item in found_groups.items():
             gid = str(item.get("gid") or "").strip()
             if not gid:
                 continue
-            seen_key = f"group:{item['platform']}:{gid}" if item.get("platform") else gid
+            plat = self._clean_platform(item.get("platform") or "onebot") or "onebot"
+            seen_key = f"group:{plat}:{gid}"
+            # 清理可能残留的裸键或旧平台键
+            for old_k in (gid, f"group:{gid}", f"group:aiocqhttp:{gid}", f"group:aihttpcq:{gid}", f"group:cqhttp:{gid}"):
+                old_ent = self._seen_groups.pop(old_k, None)
+                if isinstance(old_ent, dict) and not item.get("group_name") and old_ent.get("group_name"):
+                    item["group_name"] = old_ent["group_name"]
             ent = self._seen_groups.setdefault(seen_key, {
-                "gid": gid, "group_name": item["group_name"], "platform": item["platform"],
+                "gid": gid, "group_name": item["group_name"], "platform": plat,
                 "last_seen": now, "msg_count": 0,
             })
             if item["group_name"]:
                 ent["group_name"] = item["group_name"]
-            if item["platform"] and not ent.get("platform"):
-                ent["platform"] = item["platform"]
+            ent["platform"] = plat
             ent["last_seen"] = now
 
         if found_groups:
@@ -485,61 +520,102 @@ class XbdocWebAPIMixin:
 
 
     def _get_all_merged_groups(self, q: str = "", limit: int = 60) -> List[Dict[str, Any]]:
-        """seen + bindings 合并列表：字典键即 session_key（新老格式共存），bound 按完整 key 精确判定。"""
+        """seen + bindings 合并列表：统一平台为 onebot、剔除 webchat/probe 脏会话，并按 (kind, gid) 严格去重。"""
         merged: Dict[str, Dict[str, Any]] = {}
+        norm_bindings = self._normalize_bindings(self._bindings)
+        bound_keys = {k for k in norm_bindings.keys() if self._is_sane_key(k)}
 
-        for raw_key, meta in (self._seen_groups or {}).items():
+        for raw_key, meta in list((self._seen_groups or {}).items()):
             raw_key = str(raw_key).strip()
             if not raw_key or not isinstance(meta, dict):
                 continue
-            kind = str(meta.get("kind") or "").strip()
-            if raw_key.startswith("private:") or kind == "private":
-                _k, _p, uid = self._split_session_key(raw_key)
-                uid = uid or (raw_key.split(":", 1)[1] if ":" in raw_key else raw_key)
+            ck = self._canonical_key_str(raw_key)
+            if not ck or not self._is_sane_key(ck):
+                continue
+            kind, plat, ident = self._split_session_key(ck)
+            plat = self._clean_platform(plat or meta.get("platform") or "")
+            if kind == "private" or raw_key.startswith("private:") or str(meta.get("kind") or "") == "private":
+                uid = ident or (raw_key.split(":")[-1] if ":" in raw_key else raw_key)
+                if not uid or not uid.isdigit():
+                    continue
+                sk = f"private:{plat}:{uid}" if plat else f"private:{uid}"
+                if not self._is_sane_key(sk):
+                    continue
+                dedup_id = f"private:{uid}"
                 name = str(meta.get("group_name") or "").strip()
-                merged[raw_key] = {
-                    "gid": uid, "group_name": name,
-                    "platform": str(meta.get("platform") or ""),
-                    "msg_count": int(meta.get("msg_count") or 0),
-                    "last_seen": int(meta.get("last_seen") or 0),
-                    "bound": False, "kind": "private",
-                    "session_key": raw_key,
-                    "display": name or f"私聊 {uid}",
+                prev = merged.get(dedup_id)
+                merged[dedup_id] = {
+                    "gid": uid,
+                    "group_name": name or (prev.get("group_name", "") if prev else ""),
+                    "platform": plat or (prev.get("platform", "") if prev else ""),
+                    "msg_count": max(int(meta.get("msg_count") or 0), prev.get("msg_count", 0) if prev else 0),
+                    "last_seen": max(int(meta.get("last_seen") or 0), prev.get("last_seen", 0) if prev else 0),
+                    "bound": sk in bound_keys or (f"private:{uid}" in bound_keys) or (prev.get("bound", False) if prev else False),
+                    "kind": "private",
+                    "session_key": sk if sk in bound_keys else (prev["session_key"] if prev and prev.get("bound") else sk),
+                    "display": name or (prev.get("display", "") if prev else "") or f"私聊 {uid}",
                 }
                 continue
-            _k, _p, gid = self._split_session_key(raw_key)
-            gid = gid or raw_key  # 老裸 gid 键
-            sk = raw_key if _k == "group" else f"group:{gid}"
-            merged[sk] = {
-                "gid": gid, "group_name": str(meta.get("group_name") or ""),
-                "platform": str(meta.get("platform") or ""),
-                "msg_count": int(meta.get("msg_count") or 0),
-                "last_seen": int(meta.get("last_seen") or 0),
-                "bound": False, "kind": "group",
-                "session_key": sk,
-                "display": str(meta.get("group_name") or "").strip(),
+
+            gid = ident or raw_key.split(":")[-1]
+            if not gid or "probe" in gid.lower():
+                continue
+            plat_eff = plat or "onebot"
+            sk = f"group:{plat_eff}:{gid}"
+            if not self._is_sane_key(sk):
+                continue
+            dedup_id = f"group:{gid}"
+            name = str(meta.get("group_name") or "").strip()
+            prev = merged.get(dedup_id)
+            is_bound = (sk in bound_keys) or (f"group:{gid}" in bound_keys) or (prev.get("bound", False) if prev else False)
+            eff_sk = sk
+            if f"group:{gid}" in bound_keys and sk not in bound_keys:
+                eff_sk = f"group:{gid}"
+            elif prev and prev.get("bound"):
+                eff_sk = prev["session_key"]
+            merged[dedup_id] = {
+                "gid": gid,
+                "group_name": name or (prev.get("group_name", "") if prev else ""),
+                "platform": plat_eff,
+                "msg_count": max(int(meta.get("msg_count") or 0), prev.get("msg_count", 0) if prev else 0),
+                "last_seen": max(int(meta.get("last_seen") or 0), prev.get("last_seen", 0) if prev else 0),
+                "bound": is_bound,
+                "kind": "group",
+                "session_key": eff_sk,
+                "display": name or (prev.get("display", "") if prev else ""),
             }
 
-        bound_keys = {self._canonical_key_str(str(k)) for k in (self._bindings or {}).keys()}
         for k in list(bound_keys):
-            if not k:
+            if not k or not self._is_sane_key(k):
                 continue
-            if k in merged:
-                merged[k]["bound"] = True
-                continue
-            # 无 seen 记录的绑定：空壳卡片（bound=True，保证配过的一定能选到）
             kind, _p, ident = self._split_session_key(k)
+            plat = self._clean_platform(_p or "")
             if kind == "private":
-                merged[k] = {
-                    "gid": ident, "group_name": "", "platform": _p or "",
+                uid = ident
+                if not uid or not uid.isdigit():
+                    continue
+                dedup_id = f"private:{uid}"
+                if dedup_id in merged:
+                    merged[dedup_id]["bound"] = True
+                    merged[dedup_id]["session_key"] = k
+                    continue
+                merged[dedup_id] = {
+                    "gid": uid, "group_name": "", "platform": plat,
                     "msg_count": 0, "last_seen": 0, "bound": True,
                     "kind": "private", "session_key": k,
-                    "display": f"私聊 {ident}",
+                    "display": f"私聊 {uid}",
                 }
             else:
                 gid = ident.split(":")[-1] if ident else k
-                merged[k] = {
-                    "gid": gid, "group_name": "", "platform": _p or "",
+                if not gid or "probe" in gid.lower():
+                    continue
+                dedup_id = f"group:{gid}"
+                if dedup_id in merged:
+                    merged[dedup_id]["bound"] = True
+                    merged[dedup_id]["session_key"] = k
+                    continue
+                merged[dedup_id] = {
+                    "gid": gid, "group_name": "", "platform": plat or "onebot",
                     "msg_count": 0, "last_seen": 0, "bound": True,
                     "kind": "group", "session_key": k,
                     "display": "",
@@ -547,14 +623,15 @@ class XbdocWebAPIMixin:
 
         for g in merged.values():
             if not g.get("session_key"):
-                g["session_key"] = f"group:{g['gid']}"
+                g["session_key"] = f"group:onebot:{g['gid']}"
             if not g.get("display"):
                 g["display"] = (g["group_name"] or "").strip()
 
         items = list(merged.values())
         if q:
-            items = [g for g in items if q in g["gid"].lower() or q in g["group_name"].lower()
-                     or q in g["platform"].lower() or q in str(g.get("display") or "").lower()]
+            q_low = q.lower()
+            items = [g for g in items if q_low in g["gid"].lower() or q_low in g["group_name"].lower()
+                     or q_low in g["platform"].lower() or q_low in str(g.get("display") or "").lower()]
         items.sort(key=lambda g: (not g["bound"], -g["last_seen"], -g["msg_count"], g["gid"]))
         return items[:limit]
 

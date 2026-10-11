@@ -20,6 +20,19 @@ except Exception:
     TextPart = None  # type: ignore
 
 # 子模块导入：优先包内相对导入，失败时回退到文件目录直载（兼容各类加载器）
+# 热更新刷新：AstrBot 重载插件只 reload main.py，需主动按依赖序 reload 子模块以使更新立即生效
+import importlib as _importlib
+import sys as _sys
+
+for _sub in ("core.retrieval", "core.inject", "core.store", "core.commands", "core.webapi"):
+    for _prefix in (f"{__package__}." if __package__ else "", ""):
+        _mod_name = f"{_prefix}{_sub}" if _prefix else _sub
+        if _mod_name in _sys.modules:
+            try:
+                _importlib.reload(_sys.modules[_mod_name])
+            except Exception:
+                pass
+
 try:
     from .core.retrieval import score_chunk_bm25, tokenize
     from .core.inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
@@ -27,7 +40,6 @@ try:
     from .core.commands import XbdocCommandsMixin
     from .core.webapi import XbdocWebAPIMixin
 except ImportError:
-    import sys as _sys
     _plug_dir = str(Path(__file__).resolve().parent)
     if _plug_dir not in _sys.path:
         _sys.path.insert(0, _plug_dir)

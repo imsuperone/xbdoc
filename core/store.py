@@ -203,6 +203,10 @@ class XbdocStoreMixin:
                     _scrubbed += 1
                     continue
                 if isinstance(_v, dict):
+                    _raw_gid = str(_v.get("gid") or "").strip()
+                    if "probe" in _raw_gid.lower() or str(_v.get("platform") or "").strip().lower() == "webchat":
+                        _scrubbed += 1
+                        continue
                     _raw_plat = _v.get("platform")
                     if _raw_plat:
                         _cleaned_plat = self._clean_platform(_raw_plat)
@@ -218,6 +222,17 @@ class XbdocStoreMixin:
                             _v["platform"] = _cleaned_plat
                             _migrated_seen = True
                     _ck = self._canonical_key_str(_ks) if ":" in _ks else _ks
+                    _kk2, _kplat2, _iid2 = self._split_session_key(_ck)
+                    if not _kk2 and _ck.isdigit():
+                        _kk2, _iid2 = "group", _ck
+                    if _kk2 in ("group", "private") and not _kplat2 and _iid2:
+                        _vp = self._clean_platform(_v.get("platform", "")) or ("onebot" if _kk2 == "group" and _iid2.isdigit() else "")
+                        if _vp:
+                            _ck = f"{_kk2}:{_vp}:{_iid2}"
+                            _v["platform"] = _vp
+                    if not self._is_sane_key(_ck):
+                        _scrubbed += 1
+                        continue
                     if _ck != _ks:
                         _migrated_seen = True
                     if _ck in self._seen_groups:
@@ -389,6 +404,8 @@ class XbdocStoreMixin:
         """记录会话基础信息，供 WebUI 模糊搜索/绑定选用（群聊与私聊通用）。"""
         try:
             platform = self._platform_of(event)
+            if platform and platform.lower() == "webchat":
+                return
             if not platform and not getattr(self, "_platform_warned", False):
                 self._platform_warned = True
                 logger.warning(
@@ -400,6 +417,10 @@ class XbdocStoreMixin:
             if not gid:
                 self._record_seen_private(event, platform)
                 return
+            if "probe" in gid.lower():
+                return
+            if not platform and gid.isdigit():
+                platform = "onebot"
 
             group_name = ""
             grp = getattr(event.message_obj, "group", None)
@@ -409,6 +430,12 @@ class XbdocStoreMixin:
             now = int(time.time())
             # seen 键同样平台限定（group:plat:gid），跨平台同号不再互相覆盖
             seen_key = f"group:{platform}:{gid}" if platform else gid
+            # 若存在历史裸 gid 或无平台键，合并到规范 seen_key
+            for _old_k in (gid, f"group:{gid}", f"group:aiocqhttp:{gid}", f"group:aihttpcq:{gid}"):
+                if _old_k != seen_key and _old_k in self._seen_groups:
+                    _old_ent = self._seen_groups.pop(_old_k, None)
+                    if isinstance(_old_ent, dict) and not group_name and _old_ent.get("group_name"):
+                        group_name = str(_old_ent.get("group_name") or "").strip()
             ent = self._seen_groups.setdefault(seen_key, {
                 "gid": gid, "group_name": group_name, "platform": platform,
                 "kind": "group",
@@ -430,6 +457,11 @@ class XbdocStoreMixin:
     def _record_seen_private(self, event: AstrMessageEvent, platform: str) -> None:
         """记录私聊会话（sender 昵称复用 group_name 字段展示，kind 标记区分）。"""
         try:
+            if platform and platform.lower() == "webchat":
+                return
+            umo = str(getattr(event, "unified_msg_origin", "") or "").strip()
+            if "webchat" in umo.lower() or "probe" in umo.lower():
+                return
             uid = ""
             nickname = ""
             try:
@@ -449,10 +481,13 @@ class XbdocStoreMixin:
             if not uid:
                 ck = self._canonical_key(event)
                 if ck.startswith("private:"):
-                    uid = ck.split(":", 1)[1]
-            if not uid:
+                    uid = ck.split(":")[-1]
+            if not uid or "probe" in uid.lower():
                 return
-            uid = re.sub(r"\D", "", uid) or uid
+            uid_digits = re.sub(r"\D", "", uid)
+            if not uid_digits:
+                return
+            uid = uid_digits
             key = f"private:{platform}:{uid}" if platform else f"private:{uid}"
 
             now = int(time.time())
@@ -804,15 +839,22 @@ class XbdocStoreMixin:
 
     @staticmethod
     def _is_sane_key(cks: str) -> bool:
-        """key 可用性：限定 key 的平台段必须合法（字母数字下划线短横，≤32）。
+        """key 可用性：限定 key 的平台段必须合法（字母数字下划线短横，≤32），且排除 webchat/probe 污染。
 
-        历史 bug 曾把 PlatformMetadata 整对象 repr 写进 key，这类残骸永远匹配不到
-        真实事件，直接丢弃。无平台段的老/裸 key 视为可用。
+        历史 bug 曾把 PlatformMetadata 整对象 repr 写进 key，或把 webchat:probe_xbdoc 写入会话记录，
+        这类残骸直接丢弃。无平台段的老/裸 key 视为可用。
         """
+        s_low = str(cks or "").strip().lower()
+        if not s_low or "probe" in s_low or "webchat" in s_low or "functools.partial" in s_low:
+            return False
         kind, plat, _ident = XbdocStoreMixin._split_session_key(cks)
         if kind and plat:
             if len(plat) > 32 or not re.match(r"^[A-Za-z0-9_\-]+$", plat):
                 return False
+            if plat.lower() == "webchat":
+                return False
+        if _ident and "probe" in _ident.lower():
+            return False
         return True
 
     def _normalize_bindings(self, raw: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -827,6 +869,15 @@ class XbdocStoreMixin:
             if not self._is_sane_key(ck):
                 logger.warning(f"[{PLUGIN_NAME}] 丢弃污染会话 key: {str(k)[:80]}")
                 continue
+            # 若 seen 或同表已有平台限定（如 group:onebot:123456），自动合并，杜绝新旧 key 双存
+            ck = self._qualify_session_key(ck)
+            _k2, _p2, _id2 = self._split_session_key(ck)
+            if _k2 == "group" and not _p2 and _id2:
+                _ob_key = f"group:onebot:{_id2}"
+                if _ob_key in out or _ob_key in raw or any(
+                    self._canonical_key_str(str(rk)) == _ob_key for rk in raw.keys()
+                ):
+                    ck = _ob_key
             new_ent = {
                 "doc_ids": [str(i) for i in (v.get("doc_ids") or [])],
                 "prompt": str(v.get("prompt") or "").strip(),
@@ -860,7 +911,7 @@ class XbdocStoreMixin:
                 continue
             if str(meta.get("gid") or "").strip() != ident:
                 continue
-            p = str(meta.get("platform") or "").strip()
+            p = XbdocStoreMixin._clean_platform(meta.get("platform") or "")
             if p:
                 plats.add(p)
         return plats
@@ -873,6 +924,11 @@ class XbdocStoreMixin:
         for cand in (umo, self._canonical_key_str(umo)):
             if cand and cand not in keys:
                 keys.append(cand)
+        _k, _p, _id = self._split_session_key(ck)
+        if _k and _id:
+            for alt in (f"{_k}:onebot:{_id}", f"{_k}:{_id}"):
+                if alt not in keys:
+                    keys.append(alt)
         return keys
 
 
@@ -908,7 +964,7 @@ class XbdocStoreMixin:
         kind, plat, ident = self._split_session_key(ck)
         if not kind or plat or not ident:
             return ck
-        plats = self._seen_platforms(kind, ident, self._seen_groups)
+        plats = self._seen_platforms(kind, ident, getattr(self, "_seen_groups", None) or {})
         if len(plats) == 1:
             qualified = f"{kind}:{plats.pop()}:{ident}"
             logger.info(f"[{PLUGIN_NAME}] 会话 key 已补平台限定: {ck} -> {qualified}")
@@ -935,7 +991,13 @@ class XbdocStoreMixin:
         （其内部即 _canonical_key_str 单实现归一），此处不再自算第二份。
         """
         if isinstance(event_or_key, str):
-            cands = [event_or_key]
+            ck0 = self._canonical_key_str(event_or_key)
+            cands = [event_or_key, ck0]
+            _k, _p, _id = self._split_session_key(ck0)
+            if _k and _id:
+                for alt in (f"{_k}:onebot:{_id}", f"{_k}:{_id}"):
+                    if alt not in cands:
+                        cands.append(alt)
         else:
             try:
                 cands = self._session_keys(event_or_key) or ["default"]
