@@ -1072,27 +1072,16 @@
       const nameText = g.group_name || ((isPrivate ? "私聊 " : "群聊 ") + (g.gid || g.session_key));
       const isSelected = Boolean(curSelKey && (curSelKey === g.session_key || curSelKey.split(":").pop() === g.gid));
       const bEntry = bindingsMap[g.session_key] || bindingsMap[`${g.kind}:onebot:${g.gid}`] || bindingsMap[`${g.kind}:${g.gid}`];
-      const docCount = bEntry && Array.isArray(bEntry.docs) ? bEntry.docs.length : 0;
-      const hasPrompt = bEntry && Boolean((bEntry.prompt || "").trim());
-      const hasShield = bEntry && Boolean(bEntry.shield);
-
-      let statusBadges = "";
-      if (g.bound || bEntry) {
-        statusBadges += `<span class="badge-pill" style="background:var(--m3-sys-color-primary-container); color:var(--m3-sys-color-on-primary-container); font-weight:600;">已配置${docCount ? ` (${docCount}篇)` : ""}</span> `;
-        if (hasShield) statusBadges += `<span class="badge-pill shield-badge-on">屏蔽人格</span> `;
-        if (hasPrompt) statusBadges += `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">含提示词</span>`;
-      } else {
-        statusBadges = `<span class="badge-pill">未配置</span>`;
-      }
+      const isBound = Boolean(g.bound || bEntry);
+      const boundDot = isBound ? `<span class="group-bound-dot" title="已配置绑定"></span>` : "";
 
       return `
-        <tr class="${isSelected || g.bound ? "is-enabled" : ""}" data-select-key="${esc(g.session_key)}">
-          <td class="group-cell-name">${esc(nameText)}</td>
+        <tr class="${isSelected ? "is-selected" : (isBound ? "is-enabled" : "")}" data-select-key="${esc(g.session_key)}">
+          <td class="group-cell-name" title="${esc(nameText)}">${boundDot}${esc(nameText)}</td>
           <td class="group-cell-id" title="${esc(g.session_key)}">${esc(g.gid || g.session_key)}</td>
-          <td>${statusBadges}</td>
           <td class="group-cell-action">
             <button type="button" class="m3-btn ${isSelected ? "primary-btn" : "secondary-btn"} m3-btn-sm" data-select-key="${esc(g.session_key)}">
-              ${isSelected ? "当前选中" : "选择配置"}
+              ${isSelected ? "已选中" : "选择"}
             </button>
           </td>
         </tr>
@@ -1103,9 +1092,8 @@
       <table class="group-switch-table">
         <thead>
           <tr>
-            <th>群聊 / 会话名称</th>
-            <th>群号 / 标识</th>
-            <th>当前状态</th>
+            <th>群聊名称</th>
+            <th>群号</th>
             <th class="group-cell-action">操作</th>
           </tr>
         </thead>

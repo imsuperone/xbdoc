@@ -279,6 +279,15 @@ body {
   gap: 16px;
 }
 
+.card-row-split > div:first-child {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.card-row-split > :not(:first-child) {
+  flex-shrink: 0;
+}
+
 .card-header-actions {
   display: flex;
   justify-content: space-between;
@@ -1136,10 +1145,15 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
   box-shadow: var(--m3-shadow-card);
   max-height: 280px;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   z-index: 50;
   display: none !important;
   pointer-events: none !important;
   padding: 6px;
+}
+.suggest-dropdown::-webkit-scrollbar {
+  display: none;
 }
 
 .suggest-dropdown.open {
@@ -1190,7 +1204,7 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
 }
 
 /* ==========================================================================
-   xbdoc: Group Quick-Select Table (xbbot_beta style)
+   xbdoc: Group Quick-Select Table (统一三列无滚动条排版)
    ========================================================================== */
 .group-switch-toolbar {
   display: flex;
@@ -1201,29 +1215,43 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
 }
 .group-search-input {
   flex: 1 1 220px;
-  min-width: 180px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px;
 }
 .group-add-inline {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 1 1 260px;
+  min-width: 0;
 }
 .group-add-inline .m3-input {
-  flex: 1 1 auto;
-  min-width: 150px;
+  flex: 1 1 0%;
+  min-width: 0;
+  width: auto;
+  height: 42px;
+  padding: 0 14px;
 }
 .group-switch-table-wrap {
   max-height: 280px;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   border: 1px solid var(--m3-sys-color-divider);
   border-radius: var(--m3-radius-medium);
   background: var(--m3-sys-color-surface-container);
 }
+.group-switch-table-wrap::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
 .group-switch-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -1234,6 +1262,19 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
   border-bottom: 1px solid var(--m3-sys-color-divider);
   vertical-align: middle;
 }
+.group-switch-table th:nth-child(1),
+.group-switch-table td:nth-child(1) {
+  width: 44%;
+}
+.group-switch-table th:nth-child(2),
+.group-switch-table td:nth-child(2) {
+  width: 32%;
+}
+.group-switch-table th:nth-child(3),
+.group-switch-table td:nth-child(3) {
+  width: 24%;
+  text-align: right;
+}
 .group-switch-table th {
   position: sticky;
   top: 0;
@@ -1242,6 +1283,7 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
   font-weight: 700;
   color: var(--m3-sys-color-on-surface);
   font-size: 12px;
+  white-space: nowrap;
 }
 .group-switch-table tbody tr:last-child td {
   border-bottom: none;
@@ -1254,20 +1296,38 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
   background: var(--m3-sys-color-surface-container-high);
 }
 .group-switch-table tbody tr.is-enabled {
-  background: rgba(74, 144, 217, 0.08);
+  background: rgba(74, 144, 217, 0.06);
+}
+.group-switch-table tbody tr.is-selected {
+  background: rgba(74, 144, 217, 0.12);
+}
+.group-bound-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--m3-sys-color-primary);
+  margin-right: 6px;
+  vertical-align: middle;
 }
 .group-cell-name {
   font-weight: 600;
   color: var(--m3-sys-color-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .group-cell-id {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--m3-sys-color-outline);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .group-cell-action {
   text-align: right !important;
-  width: 110px;
+  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -1666,8 +1726,13 @@ code.mono {
 .bottom-sheet-body {
   padding: 20px 24px;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   font-size: 14px;
   line-height: 1.7;
+}
+.bottom-sheet-body::-webkit-scrollbar {
+  display: none;
 }
 
 .chunk-text-box {
@@ -1749,6 +1814,11 @@ code.mono {
     min-height: 44px;
   }
 
+  .group-switch-toolbar .m3-input {
+    min-height: 42px;
+    height: 42px;
+  }
+
   .m3-segmented-control {
     flex-wrap: wrap;
   }
@@ -1796,11 +1866,20 @@ code.mono {
     flex: 1;
   }
 
-  .card-row-split,
+  /* 仅右侧为开关或短标签时保持同行；其余竖排堆叠避免按钮出框 */
+  .card-row-split {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .card-row-split:has(> .m3-switch),
+  .card-row-split:has(> label.form-label),
   .m3-switch-row {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
   }
 
   #docModeRow {
@@ -1825,15 +1904,8 @@ code.mono {
 
   .group-switch-table th,
   .group-switch-table td {
-    padding: 8px 10px;
+    padding: 9px 10px;
     font-size: 12px;
-  }
-
-  .group-cell-name {
-    max-width: 130px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .group-cell-id {
@@ -1841,13 +1913,8 @@ code.mono {
     white-space: nowrap;
   }
 
-  .group-cell-action {
-    width: auto;
-    white-space: nowrap;
-  }
-
   .group-cell-action .m3-btn {
-    padding: 5px 10px;
+    padding: 5px 12px;
     font-size: 12px;
     min-height: 30px;
   }
