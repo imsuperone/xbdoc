@@ -195,22 +195,45 @@ class XbdocStoreMixin:
         # 无限定 key 配垃圾平台的整条扔（不可信，群下次露面自动重建）
         self._seen_groups = {}
         _scrubbed = 0
+        _migrated_seen = False
         if isinstance(_raw_seen, dict):
             for _k, _v in _raw_seen.items():
-                if not self._is_sane_key(str(_k)):
+                _ks = str(_k)
+                if not self._is_sane_key(_ks):
                     _scrubbed += 1
                     continue
                 if isinstance(_v, dict):
-                    if _v.get("platform") and not self._clean_platform(_v.get("platform")):
-                        _kk, _kplat, _iid = self._split_session_key(str(_k))
-                        if _kplat:
-                            _v["platform"] = ""
-                        else:
-                            _scrubbed += 1
-                            continue
-                    self._seen_groups[_k] = _v
-        if _scrubbed:
-            logger.warning(f"[{PLUGIN_NAME}] 启动清理污染群记录 {_scrubbed} 条")
+                    _raw_plat = _v.get("platform")
+                    if _raw_plat:
+                        _cleaned_plat = self._clean_platform(_raw_plat)
+                        if not _cleaned_plat:
+                            _kk, _kplat, _iid = self._split_session_key(_ks)
+                            if _kplat:
+                                _v["platform"] = ""
+                                _scrubbed += 1
+                            else:
+                                _scrubbed += 1
+                                continue
+                        elif _cleaned_plat != _raw_plat:
+                            _v["platform"] = _cleaned_plat
+                            _migrated_seen = True
+                    _ck = self._canonical_key_str(_ks) if ":" in _ks else _ks
+                    if _ck != _ks:
+                        _migrated_seen = True
+                    if _ck in self._seen_groups:
+                        _prev = self._seen_groups[_ck]
+                        if not _prev.get("group_name") and _v.get("group_name"):
+                            _prev["group_name"] = _v["group_name"]
+                        if not _prev.get("platform") and _v.get("platform"):
+                            _prev["platform"] = _v["platform"]
+                        _prev["last_seen"] = max(int(_prev.get("last_seen", 0) or 0), int(_v.get("last_seen", 0) or 0))
+                        _prev["msg_count"] = int(_prev.get("msg_count", 0) or 0) + int(_v.get("msg_count", 0) or 0)
+                        _migrated_seen = True
+                    else:
+                        self._seen_groups[_ck] = _v
+        if _scrubbed or _migrated_seen:
+            if _scrubbed:
+                logger.warning(f"[{PLUGIN_NAME}] 启动清理污染群记录 {_scrubbed} 条")
             self._save_seen()
         _raw_bindings = self._load_json(self.bindings_path, {})
         self._bindings: Dict[str, Dict[str, Any]] = self._normalize_bindings(_raw_bindings)
@@ -320,6 +343,11 @@ class XbdocStoreMixin:
             cand = name.strip() if isinstance(name, str) else ""
         if not cand or len(cand) > 32 or not re.match(r"^[A-Za-z0-9_\-]+$", cand):
             return ""
+        if cand.lower() in (
+            "aiocqhttp", "aihttpcq", "cqhttp", "onebot",
+            "onebot_v11", "onebotv11", "onebot11",
+        ):
+            return "onebot"
         return cand
 
     @staticmethod
@@ -708,10 +736,11 @@ class XbdocStoreMixin:
         s = str(k or "").strip()
         if not s:
             return ""
-        # 新规范 kind:platform:ident 直接透传
+        # 新规范 kind:platform:ident：合法平台统一归一（aiocqhttp/aihttpcq -> onebot），脏平台保留供 _is_sane_key 拦截
         kind, plat, ident = XbdocStoreMixin._split_session_key(s)
         if kind and plat and ident:
-            return f"{kind}:{plat}:{ident}"
+            norm_plat = XbdocStoreMixin._clean_platform(plat) or plat
+            return f"{kind}:{norm_plat}:{ident}"
         if s.lower().startswith("group:"):
             tail = s.split(":", 1)[1].strip()
             return f"group:{tail}" if tail else ""

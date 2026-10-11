@@ -901,19 +901,125 @@
     });
   }
 
-  // ---- Group Search Auto-Suggest ----
+  // ---- Group Search Auto-Suggest + Group Quick-Select Table ----
   let suggestTimer = null;
   let suggestSeq = 0; // 单调序号：旧请求先回也直接丢弃，防联想结果乱序覆盖
   async function searchGroups(q = "") {
     const mySeq = ++suggestSeq;
     try {
-      const res = await api.get("groups", q ? { q, limit: 30 } : { limit: 30 });
+      const res = await api.get("groups", q ? { q, limit: 60 } : { limit: 60 });
       if (mySeq !== suggestSeq) return null;
-      groupsCache = res.groups || res.data?.groups || [];
-      return groupsCache;
+      if (!q) {
+        groupsCache = res.groups || res.data?.groups || [];
+        renderGroupSwitchTable();
+      }
+      return res.groups || res.data?.groups || [];
     } catch (e) {
       return mySeq === suggestSeq ? [] : null;
     }
+  }
+
+  function renderGroupSwitchTable() {
+    const wrap = $("groupSwitchTableWrap");
+    if (!wrap) return;
+
+    const searchEl = $("groupTableSearch");
+    const kw = searchEl && searchEl.value ? searchEl.value.trim().toLowerCase() : "";
+    const curSelKey = ($("sessionKey") && $("sessionKey").value ? $("sessionKey").value.trim() : "");
+
+    const merged = [];
+    const seenKeys = new Set();
+
+    (groupsCache || []).forEach((g) => {
+      const key = String(g.session_key || ("group:" + g.gid));
+      if (!key || seenKeys.has(key)) return;
+      seenKeys.add(key);
+      merged.push({
+        session_key: key,
+        gid: String(g.gid || ""),
+        group_name: String(g.group_name || ""),
+        platform: String(g.platform || ""),
+        kind: String(g.kind || "group"),
+        bound: Boolean(g.bound || bindingsMap[key]),
+      });
+    });
+
+    Object.keys(bindingsMap || {}).forEach((key) => {
+      if (seenKeys.has(key)) return;
+      seenKeys.add(key);
+      const b = bindingsMap[key] || {};
+      merged.push({
+        session_key: key,
+        gid: String(b.gid || key.split(":").pop() || ""),
+        group_name: String(b.group_name || ""),
+        platform: String(b.platform || ""),
+        kind: String(b.kind || (key.startsWith("private:") ? "private" : "group")),
+        bound: true,
+      });
+    });
+
+    const filtered = merged.filter((g) => {
+      if (!kw) return true;
+      return (g.group_name && g.group_name.toLowerCase().includes(kw)) ||
+             (g.gid && g.gid.toLowerCase().includes(kw)) ||
+             (g.session_key && g.session_key.toLowerCase().includes(kw));
+    });
+
+    filtered.sort((a, b) => {
+      if (a.bound !== b.bound) return a.bound ? -1 : 1;
+      return String(a.gid).localeCompare(String(b.gid));
+    });
+
+    if (!filtered.length) {
+      wrap.innerHTML = `<div class="empty-state" style="padding:20px 12px;"><p>${kw ? "未找到匹配的群聊或会话" : "暂未获取到群聊列表，可点击右上角「刷新机器人群列表」或在右侧输入框直接填写群号"}</p></div>`;
+      return;
+    }
+
+    const rowsHtml = filtered.map((g) => {
+      const isPrivate = g.kind === "private" || g.session_key.startsWith("private:");
+      const nameText = g.group_name || ((isPrivate ? "私聊 " : "群聊 ") + (g.gid || g.session_key));
+      const isSelected = curSelKey && curSelKey === g.session_key;
+      const bEntry = bindingsMap[g.session_key];
+      const docCount = bEntry && Array.isArray(bEntry.docs) ? bEntry.docs.length : 0;
+      const hasPrompt = bEntry && Boolean((bEntry.prompt || "").trim());
+      const hasShield = bEntry && Boolean(bEntry.shield);
+
+      let statusBadges = "";
+      if (g.bound || bEntry) {
+        statusBadges += `<span class="badge-pill" style="background:var(--m3-sys-color-primary-container); color:var(--m3-sys-color-on-primary-container); font-weight:600;">已配置${docCount ? ` (${docCount}篇)` : ""}</span> `;
+        if (hasShield) statusBadges += `<span class="badge-pill shield-badge-on">屏蔽人格</span> `;
+        if (hasPrompt) statusBadges += `<span class="badge-pill" style="background:var(--m3-status-purple-bg); color:var(--m3-status-purple);">含提示词</span>`;
+      } else {
+        statusBadges = `<span class="badge-pill">未配置</span>`;
+      }
+
+      return `
+        <tr class="${isSelected || g.bound ? "is-enabled" : ""}" data-select-key="${esc(g.session_key)}">
+          <td class="group-cell-name">${esc(nameText)}</td>
+          <td class="group-cell-id">${esc(g.gid ? `${g.gid} (${g.session_key})` : g.session_key)}</td>
+          <td>${statusBadges}</td>
+          <td class="group-cell-action">
+            <button type="button" class="m3-btn ${isSelected ? "primary-btn" : "secondary-btn"} m3-btn-sm" data-select-key="${esc(g.session_key)}">
+              ${isSelected ? "当前选中" : "选择配置"}
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    wrap.innerHTML = `
+      <table class="group-switch-table">
+        <thead>
+          <tr>
+            <th>群聊 / 会话名称</th>
+            <th>群号 / 标识</th>
+            <th>当前状态</th>
+            <th class="group-cell-action">操作</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
   }
 
   function renderGroupSuggest(list) {
@@ -950,7 +1056,36 @@
     const input = $("sessionKey");
     const box = $("suggestDropdown");
     const fetchBtn = $("fetchBotGroupsBtn");
+    const tableSearch = $("groupTableSearch");
+    const tableWrap = $("groupSwitchTableWrap");
     if (!input || !box) return;
+
+    function selectSessionKey(key) {
+      if (!key) return;
+      input.value = key;
+      box.classList.remove("open");
+      resetSessionControls();
+      selectedDocIds.clear();
+      renderDocChips();
+      loadExistingSessionSettings(key);
+      renderGroupSwitchTable();
+    }
+
+    if (tableSearch) {
+      tableSearch.addEventListener("input", () => renderGroupSwitchTable());
+    }
+
+    if (tableWrap) {
+      tableWrap.addEventListener("click", (e) => {
+        const rowOrBtn = e.target.closest("[data-select-key]");
+        if (!rowOrBtn) return;
+        const key = rowOrBtn.getAttribute("data-select-key");
+        if (key) {
+          selectSessionKey(key);
+          showToast(`已选中会话：${key}`);
+        }
+      });
+    }
 
     if (fetchBtn) {
       fetchBtn.addEventListener("click", async () => {
@@ -960,14 +1095,10 @@
         showToast("正在从机器人适配器获取群聊列表，请稍候……", 4000);
 
         try {
-          // 群列表唯一刷新入口：POST groups/fetch（审计 #6）。/groups 已是只读搜索，
-          // 原主备两连的 GET fallback 只会拿到不刷新的旧列表，属于误导，已删；
-          // 失败由本函数外层 catch 的 toast 兜底
           const res = await api.post("groups/fetch");
 
           const list = res.groups || res.data?.groups || [];
           const newCount = res.new_fetched !== undefined ? res.new_fetched : list.length;
-          // 后端 debug 直出拉群失败原因（0 适配器/超时/空返回/异常原文），不再靠猜
           const dbg = res.debug || res.data?.debug || {};
           const bad = (dbg.details || []).filter((d) => !/: ok\(/.test(d)).slice(0, 2);
           const reason = `（找到适配器 ${dbg.bots ?? "?"} 个${bad.length ? "；" + bad.join("；") : ""}）`;
@@ -977,15 +1108,14 @@
             const g = await searchGroups("");
             if (g) groupsCache = g;
           }
-          renderGroupSuggest(groupsCache);
-          input.focus();
+          renderGroupSwitchTable();
 
           if (newCount > 0) {
             showToast(`已从适配器获取 ${newCount} 个群聊（共收录 ${groupsCache.length} 个）。`, 3500);
           } else if (groupsCache.length > 0) {
-            showToast(`适配器未返回新的群聊${reason}，当前共列出 ${groupsCache.length} 个已知群聊。`, 6000);
+            showToast(`群列表已刷新（当前共列出 ${groupsCache.length} 个已知群聊）。`, 3500);
           } else {
-            showToast(`未获取到新的群聊${reason}。协议不支持时，在群聊中发送一条消息即可自动记录，或手动填写 group:群号。`, 7000);
+            showToast(`未获取到新的群聊${reason}。协议不支持时，在群聊中发送一条消息即可自动记录，或手动填写 group:群号。`, 6000);
           }
         } catch (err) {
           showToast("群聊列表获取失败：" + err.message);
@@ -999,17 +1129,8 @@
     box.addEventListener("click", (e) => {
       const card = e.target.closest(".suggest-card");
       if (!card) return;
-      const key = card.dataset.key;
-      input.value = key;
-      box.classList.remove("open");
-      resetSessionControls();
-      selectedDocIds.clear();
-      renderDocChips();
-      loadExistingSessionSettings(key);
+      selectSessionKey(card.dataset.key);
     });
-
-    // 手填 Key 切走时：命中已知会话则载入，否则重置提示词/开关为默认，避免把上个群的配置存到新群
-    // 后缀精确匹配走 claimBindingKey（与保存前认领共用一份实现，审计 #5）
 
     function resetSessionControls() {
       const bp = $("bindPrompt");
@@ -1037,6 +1158,7 @@
         loadedSessionKey = v;
         resetSessionControls();
       }
+      renderGroupSwitchTable();
     });
 
     const promptEl = $("bindPrompt");
@@ -1048,11 +1170,13 @@
       clearTimeout(suggestTimer);
       const q = input.value.trim();
       if (!q) {
-        searchGroups("").then((list) => { if (list) renderGroupSuggest(list); });
+        box.classList.remove("open");
+        renderGroupSwitchTable();
         return;
       }
-      if (/^group:\d+$/.test(q)) {
+      if (/^(?:group|private):(?:[A-Za-z0-9_\-]+:)?\d+$/.test(q)) {
         box.classList.remove("open");
+        renderGroupSwitchTable();
         return;
       }
       suggestTimer = setTimeout(async () => {
@@ -1063,8 +1187,8 @@
 
     const showList = async () => {
       const q = input.value.trim();
-      if (/^group:\d+$/.test(q)) return;
-      const list = groupsCache.length ? groupsCache : await searchGroups(q);
+      if (!q || /^(?:group|private):(?:[A-Za-z0-9_\-]+:)?\d+$/.test(q)) return;
+      const list = await searchGroups(q);
       if (list) renderGroupSuggest(list);
     };
 
@@ -1210,6 +1334,7 @@
         setShieldChoice("off");
         setForceChoice("off");
         _applyDocMode("none");
+        renderGroupSwitchTable();
         showToast("表单内容已清空。");
       });
     }
@@ -1287,6 +1412,7 @@
 
   // ---- Render Active Bindings List ----
   function renderBindings() {
+    renderGroupSwitchTable();
     const container = $("bindingList");
     if (!container) return;
 
@@ -1458,6 +1584,7 @@
         if (input) {
           input.value = key;
           loadExistingSessionSettings(key);
+          renderGroupSwitchTable();
           window.scrollTo({ top: 180, behavior: "smooth" });
           showToast("会话配置已载入。");
         }
@@ -1482,6 +1609,7 @@
           }
           showToast(`已解除 ${key} 的全部文档绑定。`);
           await loadBindings();
+          await searchGroups("");
         } catch (err) {
           showToast("绑定解除失败：" + err.message);
         }

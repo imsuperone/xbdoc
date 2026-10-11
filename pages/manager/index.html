@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>文档记忆助手</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.25" />
+  <link rel="stylesheet" href="./style.css?v=1.2.26" />
   <!-- 主题色/深浅色存在服务端配置里（唯一真相源，无本地副本），需等 settings 回来才套用；
        首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
   <style>
@@ -25,11 +25,11 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.25">1.2.25</span></h1>
+          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.26">1.2.26</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
-        <span class="accent-picker-wrap"><button type="button" id="accentPickerBtn" class="m3-accent-picker" title="调整主题颜色" aria-label="调整主题颜色"><svg class="m3-accent-picker-ic" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2C6.57 2 2 6.57 2 12s4.57 10 10 10c.48 0 .87-.39.87-.87 0-.23-.09-.44-.23-.6-.14-.16-.22-.36-.22-.58 0-.48.39-.87.87-.87H16c3.31 0 6-2.69 6-6 0-4.96-4.47-9-10-9zM6.5 13c-.83 0-1.5-.67-1.5-1.5S5.67 10 6.5 10s1.5.67 1.5 1.5S7.33 13 6.5 13zm3.5-3c-.83 0-1.5-.67-1.5-1.5S9.17 7 10 7s1.5.67 1.5 1.5S10.83 10 10 10zm5 0c-.83 0-1.5-.67-1.5-1.5S14.17 7 15 7s1.5.67 1.5 1.5S15.83 10 15 10zm3 3c-.83 0-1.5-.67-1.5-1.5S17.67 10 18.5 10s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></button><input type="color" id="accentPicker" value="#4A90D9" hidden /><div class="accent-popover" id="accentPopover" hidden><div class="accent-sv" id="accentSv"><div class="accent-sv-dot" id="accentSvDot"></div></div><div class="accent-hue" id="accentHue"><div class="accent-hue-dot" id="accentHueDot"></div></div><div class="accent-pop-row"><input type="text" class="accent-hex" id="accentHex" value="#4A90D9" maxlength="7" spellcheck="false" autocomplete="off" /><span class="accent-current" id="accentCurrent"></span></div><div class="accent-presets" id="accentPresets"><button type="button" data-color="#4A90D9" style="background:#4A90D9"></button><button type="button" data-color="#1A73E8" style="background:#1A73E8"></button><button type="button" data-color="#7B1FA2" style="background:#7B1FA2"></button><button type="button" data-color="#C2185B" style="background:#C2185B"></button><button type="button" data-color="#E53935" style="background:#E53935"></button><button type="button" data-color="#F9A825" style="background:#F9A825"></button><button type="button" data-color="#388E3C" style="background:#388E3C"></button><button type="button" data-color="#00796B" style="background:#00796B"></button><button type="button" data-color="#00838F" style="background:#00838F"></button><button type="button" data-color="#455A64" style="background:#455A64"></button><button type="button" data-color="#5D4037" style="background:#5D4037"></button><button type="button" data-color="#212121" style="background:#212121"></button></div></div></span>
+        <span class="accent-picker-wrap"><button type="button" id="accentPickerBtn" class="m3-accent-picker" title="调整主题颜色" aria-label="调整主题颜色"><svg class="m3-accent-picker-ic" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M12 2C6.57 2 2 6.57 2 12s4.57 10 10 10c.48 0 .87-.39.87-.87 0-.23-.09-.44-.23-.6-.14-.16-.22-.36-.22-.58 0-.48.39-.87.87-.87H16c3.31 0 6-2.69 6-6 0-4.96-4.47-9-10-9zM6.5 13c-.83 0-1.5-.67-1.5-1.5S5.67 10 6.5 10s1.5.67 1.5 1.5S7.33 13 6.5 13zm3.5-3c-.83 0-1.5-.67-1.5-1.5S9.17 7 10 7s1.5.67 1.5 1.5S10.83 10 10 10zm5 0c-.83 0-1.5-.67-1.5-1.5S14.17 7 15 7s1.5.67 1.5 1.5S15.83 10 15 10zm3 3c-.83 0-1.5-.67-1.5-1.5S17.67 10 18.5 10s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></button><input type="color" id="accentPicker" value="#4A90D9" hidden /><div class="accent-popover" id="accentPopover" hidden><div class="accent-sv" id="accentSv"><div class="accent-sv-dot" id="accentSvDot"></div></div><div class="accent-hue" id="accentHue"><div class="accent-hue-dot" id="accentHueDot"></div></div><div class="accent-pop-row"><input type="text" class="accent-hex" id="accentHex" value="#4A90D9" maxlength="7" spellcheck="false" autocomplete="off" /><span class="accent-current" id="accentCurrent"></span></div><div class="accent-presets" id="accentPresets"><button type="button" data-color="#4A90D9" style="background:#4A90D9"></button><button type="button" data-color="#1A73E8" style="background:#1A73E8"></button><button type="button" data-color="#00838F" style="background:#00838F"></button><button type="button" data-color="#00796B" style="background:#00796B"></button><button type="button" data-color="#388E3C" style="background:#388E3C"></button><button type="button" data-color="#7CB342" style="background:#7CB342"></button><button type="button" data-color="#F9A825" style="background:#F9A825"></button><button type="button" data-color="#EF6C00" style="background:#EF6C00"></button><button type="button" data-color="#E53935" style="background:#E53935"></button><button type="button" data-color="#C2185B" style="background:#C2185B"></button><button type="button" data-color="#7B1FA2" style="background:#7B1FA2"></button><button type="button" data-color="#546E7A" style="background:#546E7A"></button></div></div></span>
         <button id="accentResetBtn" class="m3-icon-btn" title="恢复默认主题色" type="button">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
@@ -122,27 +122,30 @@
         <!-- Edit / Create Binding Card -->
         <div class="m3-card">
           <h2 class="card-title">会话绑定与群专属配置</h2>
-          <p class="card-desc">将文档分配至指定群聊，并可为该群单独配置附加提示词与人格屏蔽。</p>
+          <p class="card-desc">在下方群聊列表中直接点选目标群聊（或手动输入群号），即可为其分配文档、配置专属提示词与人格屏蔽。</p>
 
-          <!-- Session Key Selector -->
+          <!-- Session Key Selector + Group Quick-Select Table -->
           <div class="form-group">
             <div class="card-row-split" style="margin-bottom:8px;">
               <label class="form-label" for="sessionKey" style="margin-bottom:0;">
-                目标会话标识（Session Key）
+                目标群聊 / 会话选择
               </label>
-              <button id="fetchBotGroupsBtn" class="m3-btn secondary-btn" type="button" title="向机器人适配器主动拉取已加入的群聊" style="padding:4px 12px; font-size:12px;">
+              <button id="fetchBotGroupsBtn" class="m3-btn secondary-btn" type="button" title="向机器人适配器主动拉取已加入的群聊" style="padding:6px 14px; font-size:12px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
                 </svg>
-                获取机器人所在群聊
+                刷新机器人群列表
               </button>
             </div>
-            <span class="field-hint" style="margin-bottom:8px;">可按群聊名称、群号、私聊昵称搜索，或直接输入 group:123456 / private:UID</span>
-            <div style="position:relative;">
-              <input type="text" id="sessionKey" class="m3-input" placeholder="点击查看群聊或私聊列表，亦可输入群号、昵称或 UID 进行筛选" autocomplete="off" />
-              <div id="suggestDropdown" class="suggest-dropdown">
-                <!-- Auto-suggest items -->
+            <div class="group-switch-toolbar">
+              <input type="text" id="groupTableSearch" class="m3-input group-search-input" placeholder="🔍 搜索群聊名称、群号或私聊昵称..." autocomplete="off" />
+              <div class="group-add-inline" style="position:relative;">
+                <input type="text" id="sessionKey" class="m3-input" placeholder="当前选中会话 Key（如 group:onebot:群号，支持手填）" autocomplete="off" />
+                <div id="suggestDropdown" class="suggest-dropdown"></div>
               </div>
+            </div>
+            <div id="groupSwitchTableWrap" class="group-switch-table-wrap">
+              <!-- Group table rendered by app.js -->
             </div>
           </div>
 
@@ -377,7 +380,7 @@
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="./api.js?v=1.2.25" defer></script>
-  <script src="./app.js?v=1.2.25" defer></script>
+  <script src="./api.js?v=1.2.26" defer></script>
+  <script src="./app.js?v=1.2.26" defer></script>
 </body>
 </html>

@@ -273,6 +273,22 @@ class XbdocWebAPIMixin:
                 added.add(id(obj))
                 targets.append(obj)
 
+        def _add_with_inner(obj) -> None:
+            if obj is None:
+                return
+            _add(obj)
+            for sub in ("bot", "client", "_bot", "_client"):
+                try:
+                    _add(getattr(obj, sub, None))
+                except Exception:
+                    pass
+            try:
+                gc = getattr(obj, "get_client", None)
+                if callable(gc):
+                    _add(gc())
+            except Exception:
+                pass
+
         # 1. 官方通道：Context.platform_manager.platform_insts / get_insts()
         try:
             pm = getattr(self.context, "platform_manager", None)
@@ -286,17 +302,14 @@ class XbdocWebAPIMixin:
                     except Exception:
                         pass
                 for inst in insts:
-                    _add(inst)
+                    _add_with_inner(inst)
         except Exception:
             pass
-        if targets:
-            self._bots_cache = {"targets": list(targets), "ts": time.time()}
-            return targets
 
         # 2. 消息事件里缓存的 bot（适配器实例）
         try:
             if getattr(self, "_latest_bot", None) is not None:
-                _add(self._latest_bot)
+                _add_with_inner(self._latest_bot)
         except Exception:
             pass
         if targets:

@@ -1,7 +1,8 @@
 # 更新日志
 
-## v1.2.25
+## v1.2.26
 
-- README 统一为五段结构：简介、功能、安装、指令、说明，功能独立成节。
-- 插件简介（metadata）去除 emoji 与宣传式表述，五个仓库风格一致。
-- 更新日志固定为单节格式。
+- 统一 `aiocqhttp`（`aihttpcq`）与 `onebot` 平台标识，启动时自动无损合并 `seen_groups.json` 与 `bindings.json` 中的重复群会话条目。
+- WebUI 会话绑定页新增群聊快速选择表（展示群名称、群号与绑定状态），支持搜索过滤与一键填入，并与 xbimg / xbnext 统一 12 色主题及圆角边距样式。
+- 优化 `/xbdoc` 菜单、`status`、`list`、`workspace`、`prompt`、`mode` 指令输出排版。
+
