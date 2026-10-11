@@ -1108,7 +1108,7 @@ button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
    ========================================================================== */
 .settings-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 6px 28px;
   align-items: start;
 }
@@ -1796,22 +1796,16 @@ code.mono {
     flex: 1;
   }
 
-  .card-row-split {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .card-row-split:has(> .m3-switch),
-  .m3-switch-row:has(> .m3-switch) {
+  .card-row-split,
+  .m3-switch-row {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
   }
 
-  .m3-switch-row {
+  #docModeRow {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 10px;
   }
 
@@ -1823,7 +1817,8 @@ code.mono {
 
   .group-search-input,
   .group-add-inline {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    max-width: none;
     width: 100%;
     min-width: 0;
   }

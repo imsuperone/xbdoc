@@ -45,13 +45,22 @@
     `./`,
   ];
 
-  async function tryFetchJson(url, options = {}) {
-    const res = await fetch(url, options);
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
+  async function tryFetchJson(url, options = {}, timeoutMs = 0) {
+    const ctrl = (timeoutMs > 0 && typeof AbortController === "function" && !(options && options.signal))
+      ? new AbortController()
+      : null;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, timeoutMs) : null;
+    try {
+      const fetchOpts = ctrl ? { ...options, signal: ctrl.signal } : options;
+      const res = await fetch(url, fetchOpts);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
+      }
+      return await res.json();
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    return await res.json();
   }
 
   // 带并发合并的前缀请求：已有探测结果直连；已有扫描在飞则等它结束复用结果；
@@ -75,7 +84,7 @@
     const flight = (async () => {
       for (const p of prefixes) {
         try {
-          const r = await tryFetchJson(urlOf(p), options);
+          const r = await tryFetchJson(urlOf(p), options, 2500);
           _detectedPrefix = p;
           return r;
         } catch (e) {}

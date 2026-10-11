@@ -4,9 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>文档记忆助手</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.27" />
-  <!-- 主题色/深浅色存在服务端配置里（唯一真相源，无本地副本），需等 settings 回来才套用；
-       首帧先挂起，避免"先见默认色、再跳成已存色"。回填后由 revealUiPrefs() 揭开，3s 兜底。 -->
+  <link rel="stylesheet" href="./style.css?v=1.2.28" />
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
     @media (prefers-color-scheme: dark) { html[data-boot] { background: #0f1115; } }
@@ -14,8 +12,15 @@
   <script>
     (function () {
       var d = document.documentElement;
+      try {
+        var t = localStorage.getItem("xbdoc_ui_theme");
+        var a = localStorage.getItem("xbdoc_ui_accent");
+        if (t === "dark" || t === "light") d.setAttribute("data-theme", t);
+        if (a && /^#[0-9a-fA-F]{6}$/.test(a)) d.style.setProperty("--m3-sys-color-primary", a);
+        if (t) return;
+      } catch (e) {}
       d.setAttribute("data-boot", "");
-      setTimeout(function () { d.removeAttribute("data-boot"); }, 3000);
+      setTimeout(function () { d.removeAttribute("data-boot"); }, 150);
     })();
   </script>
 </head>
@@ -25,7 +30,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.27">1.2.27</span></h1>
+          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.28">1.2.28</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -175,7 +180,11 @@
               <label class="form-label" style="margin: 0;">强制注入系统提示词</label>
               <p class="field-hint">清空其余提示词，仅保留专属提示词作为底层唯一系统提示词</p>
             </div>
-            <div class="segmented-choice" id="forceChoiceGroup">
+            <label class="m3-switch">
+              <input type="checkbox" id="forceSwitchToggle" />
+              <span class="switch-slider"></span>
+            </label>
+            <div class="segmented-choice" id="forceChoiceGroup" style="display:none;">
               <button class="segmented-choice-btn active" data-val="off" type="button">关闭</button>
               <button class="segmented-choice-btn" data-val="on" type="button">开启（仅保留唯一系统提示词）</button>
             </div>
@@ -201,7 +210,11 @@
               <label class="form-label" style="margin: 0;">本群屏蔽 AstrBot 人格</label>
               <p class="field-hint">开启后将清空系统默认人格，仅使用本群配置的文档或提示词</p>
             </div>
-            <div class="segmented-choice" id="shieldChoiceGroup">
+            <label class="m3-switch">
+              <input type="checkbox" id="shieldSwitchToggle" />
+              <span class="switch-slider"></span>
+            </label>
+            <div class="segmented-choice" id="shieldChoiceGroup" style="display:none;">
               <button class="segmented-choice-btn active" data-val="off" type="button">关闭（保留原人格）</button>
               <button class="segmented-choice-btn" data-val="on" type="button">开启（清空原人格）</button>
             </div>
@@ -380,7 +393,7 @@
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="./api.js?v=1.2.27" defer></script>
-  <script src="./app.js?v=1.2.27" defer></script>
+  <script src="./api.js?v=1.2.28" defer></script>
+  <script src="./app.js?v=1.2.28" defer></script>
 </body>
 </html>
