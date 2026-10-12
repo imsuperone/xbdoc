@@ -1367,7 +1367,7 @@
     });
   }
 
-  // ---- Force System Prompt Choice Buttons & Switch ----
+  // ---- Force System Prompt Switch ----
   function initForceChoice() {
     const sw = $("forceSwitchToggle");
     if (sw) {
@@ -1375,29 +1375,15 @@
         setForceChoice(sw.checked ? "on" : "off");
       });
     }
-    const group = $("forceChoiceGroup");
-    if (!group) return;
-
-    group.addEventListener("click", (e) => {
-      const btn = e.target.closest(".segmented-choice-btn");
-      if (!btn) return;
-      setForceChoice(btn.dataset.val);
-    });
   }
 
   function setForceChoice(val) {
     currentForcePrompt = val === "on";
     const sw = $("forceSwitchToggle");
     if (sw) sw.checked = currentForcePrompt;
-    const group = $("forceChoiceGroup");
-    if (!group) return;
-
-    group.querySelectorAll(".segmented-choice-btn").forEach((btn) => {
-      btn.classList.toggle("active", (btn.dataset.val === "on") === currentForcePrompt);
-    });
   }
 
-  // ---- Shield Switch Choice Buttons & Switch (Only On / Off, No Global) ----
+  // ---- Shield Switch (Only On / Off, No Global) ----
   function initShieldChoice() {
     const sw = $("shieldSwitchToggle");
     if (sw) {
@@ -1405,26 +1391,12 @@
         setShieldChoice(sw.checked ? "on" : "off");
       });
     }
-    const group = $("shieldChoiceGroup");
-    if (!group) return;
-
-    group.addEventListener("click", (e) => {
-      const btn = e.target.closest(".segmented-choice-btn");
-      if (!btn) return;
-      setShieldChoice(btn.dataset.val);
-    });
   }
 
   function setShieldChoice(val) {
     currentShield = val === "on" ? "on" : "off";
     const sw = $("shieldSwitchToggle");
     if (sw) sw.checked = currentShield === "on";
-    const group = $("shieldChoiceGroup");
-    if (!group) return;
-
-    group.querySelectorAll(".segmented-choice-btn").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.val === currentShield);
-    });
   }
 
   // ---- Binding Form Save & Reset ----
@@ -1673,7 +1645,7 @@
         };
 
         try {
-          await api.post("bindings/save", {
+          const res = await api.post("bindings/save", {
             session_key: key,
             doc_ids: (cur.docs || []).map((d) => (typeof d === "string" ? d : d.doc_id)),
             prompt: cur.prompt || "",
@@ -1682,7 +1654,9 @@
             mode: targetMode,
           });
           showToast(modeLabels[targetMode] || "模式已更新");
-          await loadBindings();
+          const sk = (res && res.session_key) || key;
+          if (res && res.entry) bindingsMap[sk] = res.entry;
+          renderBindings();
         } catch (err) {
           showToast("生效模式切换失败：" + err.message);
         }
@@ -1702,7 +1676,7 @@
         if (!(await uiConfirm(`确定解除 ${key} 的全部绑定与会话配置吗？该群提示词、模式与开关将一并重置。`, "解绑确认"))) return;
         try {
           showToast(`正在解除 ${key} 的文档绑定与相关配置，请稍候……`);
-          await api.post("bindings/save", {
+          const res = await api.post("bindings/save", {
             session_key: key,
             doc_ids: [],
             prompt: "",
@@ -1718,7 +1692,11 @@
             renderDocChips();
           }
           showToast(`已解除 ${key} 的全部文档绑定。`);
-          await loadBindings();
+          const sk = (res && res.session_key) || key;
+          delete bindingsMap[key];
+          if (res && res.entry) bindingsMap[sk] = res.entry;
+          else delete bindingsMap[sk];
+          renderBindings();
           await searchGroups("");
         } catch (err) {
           showToast("绑定解除失败：" + err.message);
@@ -2011,18 +1989,6 @@
   }
 
   function initSettings() {
-    const container = $("settingsForm");
-    if (container) {
-      container.addEventListener("click", (e) => {
-        const btn = e.target.closest(".segmented-choice-btn");
-        if (!btn) return;
-        const group = btn.closest(".segmented-choice");
-        if (!group) return;
-        group.querySelectorAll(".segmented-choice-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-      });
-    }
-
     const saveBtn = $("saveSettingsBtn");
     if (saveBtn) {
       saveBtn.addEventListener("click", async () => {
@@ -2132,14 +2098,7 @@
     initRefreshButton();
     updatePromptCount();
 
-    // 2. Connect with bridge if available
-    try {
-      await api.ready();
-    } catch (e) {
-      console.warn("[DocMemory] api.ready fallback:", e);
-    }
-
-    // 3. Load critical first-screen data first, then prefetch secondary tabs
+    // 2. Load critical first-screen data first, then prefetch secondary tabs
     try {
       await Promise.all([loadSettings(), loadDocs()]);
       console.log("[DocMemory] Initial data loaded successfully.");

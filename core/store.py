@@ -862,6 +862,7 @@ class XbdocStoreMixin:
         out: Dict[str, Dict[str, Any]] = {}
         if not isinstance(raw, dict):
             return out
+        canon_raw_keys = {self._canonical_key_str(str(rk)) for rk in raw.keys()}
         for k, v in raw.items():
             ck = self._canonical_key_str(str(k))
             if not ck or not isinstance(v, dict):
@@ -874,9 +875,7 @@ class XbdocStoreMixin:
             _k2, _p2, _id2 = self._split_session_key(ck)
             if _k2 == "group" and not _p2 and _id2:
                 _ob_key = f"group:onebot:{_id2}"
-                if _ob_key in out or _ob_key in raw or any(
-                    self._canonical_key_str(str(rk)) == _ob_key for rk in raw.keys()
-                ):
+                if _ob_key in out or _ob_key in raw or _ob_key in canon_raw_keys:
                     ck = _ob_key
             new_ent = {
                 "doc_ids": [str(i) for i in (v.get("doc_ids") or [])],

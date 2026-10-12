@@ -1,5 +1,10 @@
 # 更新日志
 
+## v1.2.31
+
+- 优化会话绑定标准化与读取性能：`_normalize_bindings` 预计算规范化键集合，将合并查重复杂度由 $O(B^2)$ 降至 $O(B)$；只读接口 `_api_list_bindings` 与 `_get_all_merged_groups` 直接复用已标准化内存表，消除每次查询的整表二次克隆。
+- 精简 WebUI 冗余结构与请求：移除 `index.html` 与 `app.js` 中已废弃的隐藏分段按钮 DOM 及监听，将列表内切换生效模式与解绑改为就地更新 `bindingsMap`，减少整表重拉请求。
+
 ## v1.2.30
 
 - 修复 LLM 工具 `doc_memory_list` 与 `doc_memory_search` 使用 `yield event.plain_result(...)` 导致 AstrBot Agent 工具循环把结果直接作为聊天消息发入群聊（从而触发转图发送两张图片）的严重问题，改为标准 `return str` 返回给模型。

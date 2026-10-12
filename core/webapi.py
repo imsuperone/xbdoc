@@ -189,14 +189,13 @@ class XbdocWebAPIMixin:
 
 
     async def _api_list_bindings(self):
-        # 只读接口：用规范化副本展示，不回写（回写只发生在启动加载与保存入口，避免 GET/POST 竞态）
-        _view = self._normalize_bindings(self._bindings)
-        # 无人消费的字段已删：顶层 docs（list_documents 全量加锁排序）、条目 platform
+        # 只读接口：_bindings 在启动加载与写入口已完成标准化，直接读取构建视图
+        _view = dict(self._bindings or {})
         return json_response({
             "bindings": {
                 k: self._binding_entry_view(k, ent)
                 for k, ent in _view.items()
-                if self._is_sane_key(k)
+                if isinstance(ent, dict) and self._is_sane_key(k)
             },
         })
 
@@ -522,7 +521,7 @@ class XbdocWebAPIMixin:
     def _get_all_merged_groups(self, q: str = "", limit: int = 60) -> List[Dict[str, Any]]:
         """seen + bindings 合并列表：统一平台为 onebot、剔除 webchat/probe 脏会话，并按 (kind, gid) 严格去重。"""
         merged: Dict[str, Dict[str, Any]] = {}
-        norm_bindings = self._normalize_bindings(self._bindings)
+        norm_bindings = dict(self._bindings or {})
         bound_keys = {k for k in norm_bindings.keys() if self._is_sane_key(k)}
 
         for raw_key, meta in list((self._seen_groups or {}).items()):
