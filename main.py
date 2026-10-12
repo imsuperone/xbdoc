@@ -211,6 +211,37 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
         except Exception:
             pass
 
+    @staticmethod
+    def _strip_doc_tools_from_req(req) -> None:
+        """当前会话无参考文档可查时，从本次请求的工具集中移除文档工具（浅拷贝隔离，不污染全局注册表）。"""
+        try:
+            import copy as _copy
+            ft = getattr(req, "func_tool", None)
+            if ft is None:
+                return
+            names = {"doc_memory_search", "doc_memory_list"}
+            fl = getattr(ft, "func_list", None)
+            tl = getattr(ft, "tools", None)
+            need_copy = False
+            if isinstance(fl, list) and any(getattr(f, "name", "") in names for f in fl):
+                need_copy = True
+            elif isinstance(tl, list) and any(getattr(f, "name", "") in names for f in tl):
+                need_copy = True
+            elif isinstance(tl, dict) and any(k in names for k in tl):
+                need_copy = True
+            if not need_copy:
+                return
+            ft_copy = _copy.copy(ft)
+            if isinstance(fl, list):
+                ft_copy.func_list = [f for f in fl if getattr(f, "name", "") not in names]
+            if isinstance(tl, list):
+                ft_copy.tools = [f for f in tl if getattr(f, "name", "") not in names]
+            elif isinstance(tl, dict):
+                ft_copy.tools = {k: v for k, v in tl.items() if k not in names}
+            req.func_tool = ft_copy
+        except Exception:
+            pass
+
     @filter.on_llm_request()
     async def _inject_docs(self, event: AstrMessageEvent, req):
         try:
@@ -221,6 +252,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 # 取不到群号时按私聊处理：未知会话默认不注入文档，最安全
                 is_private = True
             if is_private and not bool(self._cfg("allow_private_bind")):
+                self._strip_doc_tools_from_req(req)
                 return
 
             # 只读不创建：统一会话解析，一处确定 matched_key 与全部生效配置
@@ -233,6 +265,10 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             mode = str(sess.get("mode") or "none").lower()
             custom_prompt = str(sess.get("prompt") or "").strip()
             ignore_history = bool(sess.get("ignore_history", False))
+
+            # 非参考资料模式或未绑定文档时，对本次请求隐藏文档检索工具，避免模型误调
+            if not has_bound or mode in ("none", "system", "workspace"):
+                self._strip_doc_tools_from_req(req)
 
             # 0. /xbdoc no 指令支持：彻底清空此前所有历史消息，不再读取与记忆
             if ignore_history:
@@ -369,33 +405,36 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
 
     # ---------- LLM Tool ----------
     @filter.llm_tool(name="doc_memory_search")
-    async def _tool_search(self, event: AstrMessageEvent, query: str):
-        """搜索本会话绑定的文档内容。
+    async def _tool_search(self, event: AstrMessageEvent, query: str) -> str:
+        """搜索本会话绑定的参考文档内容（仅在会话已绑定参考文档时调用）。
 
         Args:
             query(string): 要在文档中搜索的关键词或问题
         """
-        doc_ids = self.get_bound_doc_ids(event)
-        if not doc_ids:
-            yield event.plain_result("本会话尚未绑定任何文档。")
-            return
+        sess = self._effective_session(event)
+        mode = str(sess.get("mode") or "none").lower()
+        doc_ids = [d for d in sess.get("doc_ids", []) if d in self._index]
+        if not doc_ids or mode == "none":
+            return "当前会话未启用或未绑定任何参考文档，无需调用文档工具，请直接根据上下文回答用户，不要向用户提及文档绑定状态。"
         hits = self.retrieve(query or event.message_str or "", doc_ids, self._cfg_int("top_k"))
         if not hits:
-            yield event.plain_result("在绑定文档中未匹配到相关内容。")
-            return
+            return "在绑定文档中未匹配到相关内容，请直接根据已有上下文回答。"
         out = "\n---\n".join(f"【{h['filename']}#片段{h['chunk_idx']+1}】\n{h['text'][:1200]}" for h in hits)
-        yield event.plain_result(out[:3500])
+        return out[:3500]
 
 
     @filter.llm_tool(name="doc_memory_list")
-    async def _tool_list(self, event: AstrMessageEvent):
-        """列出本会话已绑定的文档清单。"""
-        doc_ids = self.get_bound_doc_ids(event)
-        if not doc_ids:
-            yield event.plain_result("本会话尚未绑定任何文档。")
-            return
+    async def _tool_list(self, event: AstrMessageEvent) -> str:
+        """列出本会话已绑定的参考文档清单（仅在会话已绑定参考文档时调用）。"""
+        sess = self._effective_session(event)
+        mode = str(sess.get("mode") or "none").lower()
+        doc_ids = [d for d in sess.get("doc_ids", []) if d in self._index]
+        if not doc_ids or mode == "none":
+            return "当前会话未启用或未绑定任何参考文档，无需调用文档工具，请直接根据上下文回答用户，不要向用户提及文档绑定状态。"
         lines = [f"- {self._index[d]['filename']} (id={d})" for d in doc_ids if d in self._index]
-        yield event.plain_result("本会话绑定的文档：\n" + "\n".join(lines))
+        if not lines:
+            return "当前会话未启用或未绑定任何参考文档，请直接根据已有上下文回答用户。"
+        return "本会话绑定的文档：\n" + "\n".join(lines)
 
 
     # ---------- 聊天指令 ----------

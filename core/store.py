@@ -926,7 +926,8 @@ class XbdocStoreMixin:
                 keys.append(cand)
         _k, _p, _id = self._split_session_key(ck)
         if _k and _id:
-            for alt in (f"{_k}:onebot:{_id}", f"{_k}:{_id}"):
+            alts = [f"{_k}:onebot:{_id}", f"{_k}:{_id}"] if (not _p or _p == "onebot") else [f"{_k}:{_id}"]
+            for alt in alts:
                 if alt not in keys:
                     keys.append(alt)
         return keys
@@ -995,7 +996,8 @@ class XbdocStoreMixin:
             cands = [event_or_key, ck0]
             _k, _p, _id = self._split_session_key(ck0)
             if _k and _id:
-                for alt in (f"{_k}:onebot:{_id}", f"{_k}:{_id}"):
+                alts = [f"{_k}:onebot:{_id}", f"{_k}:{_id}"] if (not _p or _p == "onebot") else [f"{_k}:{_id}"]
+                for alt in alts:
                     if alt not in cands:
                         cands.append(alt)
         else:
