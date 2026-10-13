@@ -1902,8 +1902,8 @@
 
   function syncPlatformUI(cfg) {
     if (!cfg) cfg = settingsConfig || {};
-    const allowed = String(cfg.allowed_platforms || "").trim();
-    const preset = String(cfg.platform_preset || "all").trim().toLowerCase();
+    const preset = String(cfg.platform_preset || "onebot").trim().toLowerCase();
+    const allowed = String(cfg.allowed_platforms !== undefined ? cfg.allowed_platforms : (preset === "onebot" ? "onebot, aiocqhttp" : "")).trim();
 
     const allowedInp = $("cfgAllowedPlatforms");
     if (allowedInp && document.activeElement !== allowedInp) {
@@ -2147,9 +2147,9 @@
       }
     }
     const sel = $("sel_platform_preset");
-    out.platform_preset = sel ? sel.value : "all";
+    out.platform_preset = sel ? sel.value : "onebot";
     const allowedEl = $("cfgAllowedPlatforms");
-    out.allowed_platforms = allowedEl ? allowedEl.value.trim() : "";
+    out.allowed_platforms = allowedEl ? allowedEl.value.trim() : "onebot, aiocqhttp";
     return out;
   }
 

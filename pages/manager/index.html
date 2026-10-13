@@ -260,9 +260,9 @@
           <div class="form-group" style="margin-top: 10px;">
             <label class="form-label" for="sel_platform_preset">快速模式（下拉选择）</label>
             <select class="m3-field" id="sel_platform_preset">
-              <option value="all">全部平台生效（All，默认推荐）</option>
-              <option value="onebot">仅 QQ / OneBot 平台</option>
+              <option value="onebot" selected>仅 QQ / OneBot 平台（默认推荐）</option>
               <option value="onebot_matrix">QQ + Matrix 平台</option>
+              <option value="all">全部平台生效（All）</option>
               <option value="custom">自定义组合（勾选下方平台或输入添加）</option>
             </select>
           </div>
@@ -309,7 +309,7 @@
           </div>
           <div class="form-group" style="margin-top: 12px;">
             <label class="form-label" for="cfgAllowedPlatforms">生效平台标识列表（与上方勾选实时双向同步）</label>
-            <input type="text" class="m3-field" id="cfgAllowedPlatforms" placeholder="留空或 all 表示允许所有平台" />
+            <input type="text" class="m3-field" id="cfgAllowedPlatforms" placeholder="onebot, aiocqhttp" />
             <span class="helper">以逗号分隔平台标识（如 <code>onebot, matrix</code>）；留空或填 <code>all</code> 表示所有平台。上方勾选或添加会自动更新。</span>
           </div>
         </div>

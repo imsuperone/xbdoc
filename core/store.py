@@ -52,8 +52,8 @@ CONFIG_DEFAULTS: Dict[str, Any] = {
     "fallback_inject": True,
     "allow_private_bind": True,
     "enable_private": True,
-    "platform_preset": "all",
-    "allowed_platforms": "",
+    "platform_preset": "onebot",
+    "allowed_platforms": "onebot, aiocqhttp",
     "perf_log": False,
     # UI 偏好：AstrBot 用沙箱 iframe 载插件页，localStorage 被禁，
     # 主题色/深浅色只存本地刷新即丢，必须落服务端。见下方 CONFIG_META 同名键（hidden）。
@@ -105,12 +105,12 @@ CONFIG_META: Dict[str, Dict[str, Any]] = {
     },
     "platform_preset": {
         "description": "生效平台快速选择",
-        "hint": "下拉快速选择生效平台组合。若选择「自定义」，则由下方「允许生效的平台」自定义设置生效。留空或 all 表示允许所有平台。",
+        "hint": "下拉快速选择生效平台组合。若选择「自定义」，则由下方「允许生效的平台」自定义设置生效。默认仅 OneBot / QQ 平台。",
         "type": "string",
     },
     "allowed_platforms": {
         "description": "允许生效的平台（自定义/高级）",
-        "hint": "当平台选择为「自定义」时生效。以逗号分隔允许生效的平台标识（如 onebot, matrix, telegram 等）。留空或填 all 表示允许所有平台。",
+        "hint": "当平台选择为「自定义」时生效。以逗号分隔允许生效的平台标识（如 onebot, matrix, telegram 等）。留空或填 all 表示允许所有平台。默认 onebot, aiocqhttp。",
         "type": "string",
     },
     "perf_log": {
