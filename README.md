@@ -1,4 +1,4 @@
-# 文档记忆助手 v1.2.31
+# 文档记忆助手 v1.2.32
 
 > 面向 AstrBot 的知识库插件：上传文档，对话时按需引用，无需向量模型。
 
@@ -9,7 +9,7 @@
 本插件基于 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 开发。AstrBot 是一个松耦合、异步、支持多消息平台部署，具有易用的插件系统和完善的大语言模型（LLM）接入功能的聊天机器人及开发框架，使用文档见 [docs.astrbot.app](https://docs.astrbot.app)。
 
 - 插件 ID：`astrbot_plugin_xbdoc`
-- 当前版本：`v1.2.31`
+- 当前版本：`v1.2.32`
 - 运行要求：AstrBot `>=4.16`
 - 仓库：https://github.com/imsuperone/xbdoc
 
