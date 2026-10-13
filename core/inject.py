@@ -28,32 +28,24 @@ def fold_ws(text: str) -> str:
 def apply_system_prompt(req, text: str, replace: bool) -> None:
     """改写 LLM 请求的系统提示词。
 
-    replace=True：清空原人格，text 作为唯一系统词（含 contexts/messages 内联改写）。
-    replace=False： text 为空时不动；否则追加到现有系统词之后。
+    replace=True：清空原人格，text 作为唯一系统词，并清理 contexts/messages 中残留的 system 消息以免触发 Gemini 499/上下文错误。
+    replace=False：text 为空时不动；否则追加到现有系统词之后。
     """
     text = str(text or "")
+    # 始终清理 contexts/messages 中非法的 role=="system" 项（AstrBot v4 由 req.system_prompt 独立承载系统词，
+    # 若 contexts 中混入 role=="system" 会导致 Gemini 等模型报 400/499 上下文错误以及空对话显示“上下文 1 条”）
+    for attr in ("contexts", "messages"):
+        ctx = getattr(req, attr, None)
+        if isinstance(ctx, list) and ctx:
+            ctx[:] = [
+                m for m in ctx
+                if (m.get("role") if isinstance(m, dict) else getattr(m, "role", "")) != "system"
+            ]
     if replace:
         try:
             req.system_prompt = text
         except Exception:
             pass
-        for attr in ("contexts", "messages"):
-            ctx = getattr(req, attr, None)
-            if isinstance(ctx, list):
-                has_sys = False
-                for m in ctx:
-                    r = m.get("role") if isinstance(m, dict) else getattr(m, "role", "")
-                    if r == "system":
-                        if isinstance(m, dict):
-                            m["content"] = text
-                        else:
-                            try:
-                                setattr(m, "content", text)
-                            except Exception:
-                                pass
-                        has_sys = True
-                if not has_sys and text:
-                    ctx.insert(0, {"role": "system", "content": text})
     else:
         if not text:
             return
@@ -62,6 +54,7 @@ def apply_system_prompt(req, text: str, replace: bool) -> None:
             req.system_prompt = f"{cur}\n\n{text}".strip() if cur else text
         except Exception:
             pass
+
 
 
 def truncate_text(body: str, max_chars: int) -> str:

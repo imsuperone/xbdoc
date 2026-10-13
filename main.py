@@ -272,14 +272,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
 
             # 0. /xbdoc no 指令支持：彻底清空此前所有历史消息，不再读取与记忆
             if ignore_history:
-                if hasattr(req, "contexts") and isinstance(req.contexts, list):
-                    req.contexts.clear()
-                if hasattr(req, "messages") and isinstance(req.messages, list):
-                    req.messages = [
-                        m for m in req.messages
-                        if (m.get("role") if isinstance(m, dict) else getattr(m, "role", "")) == "system"
-                    ]
-                for h_attr in ("history", "chat_history"):
+                for h_attr in ("contexts", "messages", "history", "chat_history"):
                     h_val = getattr(req, h_attr, None)
                     if isinstance(h_val, list):
                         h_val.clear()
