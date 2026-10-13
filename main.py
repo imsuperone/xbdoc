@@ -246,12 +246,18 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
     async def _inject_docs(self, event: AstrMessageEvent, req):
         try:
             t0 = time.perf_counter()
+            plat = self._platform_of(event)
+            if not self.is_platform_allowed(plat):
+                self._strip_doc_tools_from_req(req)
+                return
+
             try:
                 is_private = not event.get_group_id()
             except Exception:
                 # 取不到群号时按私聊处理：未知会话默认不注入文档，最安全
                 is_private = True
-            if is_private and not bool(self._cfg("allow_private_bind")):
+            allow_private = bool(self._cfg("allow_private_bind", True)) and bool(self._cfg("enable_private", True))
+            if is_private and not allow_private:
                 self._strip_doc_tools_from_req(req)
                 return
 
@@ -266,8 +272,8 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             custom_prompt = str(sess.get("prompt") or "").strip()
             ignore_history = bool(sess.get("ignore_history", False))
 
-            # 非参考资料模式或未绑定文档时，对本次请求隐藏文档检索工具，避免模型误调
-            if not has_bound or mode in ("none", "system", "workspace"):
+            # 非参考资料模式/工作区模式或未绑定文档时，对本次请求隐藏文档检索工具，避免模型误调
+            if not has_bound or mode in ("none", "system"):
                 self._strip_doc_tools_from_req(req)
 
             # 0. /xbdoc no 指令支持：彻底清空此前所有历史消息，不再读取与记忆
@@ -388,6 +394,9 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
     @filter.event_message_type(filter.EventMessageType.ALL, priority=100)
     async def _seen_collector(self, event: AstrMessageEvent):
         try:
+            plat = self._platform_of(event)
+            if not self.is_platform_allowed(plat):
+                return
             bot = getattr(event, "bot", None)
             if bot is not None:
                 self._latest_bot = bot
@@ -468,6 +477,19 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
         # 仅带 / 的 /xxx 才当指令：裸 xbdoc（私聊免前缀、@机器人等）不触发，回落普通消息。
         orig = self._orig_message_text(event)
         if not orig.startswith("/"):
+            return
+
+        plat = self._platform_of(event)
+        if not self.is_platform_allowed(plat):
+            return
+
+        try:
+            is_private = not event.get_group_id()
+        except Exception:
+            is_private = True
+        allow_private = bool(self._cfg("allow_private_bind", True)) and bool(self._cfg("enable_private", True))
+        if is_private and not allow_private:
+            yield event.plain_result("⚠️ 私聊会话已禁用文档记忆功能（可在设置页开启）。")
             return
 
         raw = (event.message_str or "").strip()

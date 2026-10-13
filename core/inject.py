@@ -57,14 +57,13 @@ def apply_system_prompt(req, text: str, replace: bool) -> None:
 
 
 
-def truncate_text(body: str, max_chars: int) -> str:
+def truncate_text(body: str, max_chars: int, mark: str = "\n…(截断)") -> str:
     """截断公共逻辑：max_chars <= 0 不限制；总长（含标记）严格 ≤ max_chars；专属提示词永不经此截断。"""
     body = body or ""
     if max_chars <= 0:
         return body
     if len(body) <= max_chars:
         return body
-    mark = "\n…(截断)"
     if max_chars <= len(mark):
         return body[:max_chars]
     return body[: max_chars - len(mark)] + mark
@@ -81,27 +80,86 @@ def build_system_text(doc_texts: List[str], custom_prompt: str, max_chars: int) 
     return f"{combined}\n\n{custom_prompt}" if custom_prompt else combined
 
 
+SAFE_WORKSPACE_MAX_CHARS = 32000
+
+
 def build_workspace_text(
     files: List[Tuple[str, str]], custom_prompt: str, max_chars: int
 ) -> str:
-    """工作区模式：挂载头计入预算；正文空白折叠；max_chars <= 0 时全量挂载。"""
-    sections: List[str] = []
-    total = 0
+    """工作区模式：
+    1. 始终生成【工作区文件清单】目录，保证模型获知全部挂载文件与体量（防小文件被遮蔽饿死）；
+    2. 多文件公平预算：小文件优先完整挂载，大文件均分剩余预算并标明截断；
+    3. max_chars <= 0 时施加 SAFE_WORKSPACE_MAX_CHARS (32k 字) 安全兜底，防 100k+ token 导致网关 504 超时。
+    """
+    if not files:
+        custom_prompt = (custom_prompt or "").strip()
+        return custom_prompt
+
+    # 1. 始终生成文件清单（目录索引），无论内容多长模型均能获知完整文件全貌
+    manifest_lines = [f"【工作区文件清单】（共 {len(files)} 个文件）："]
     for fname, body in files:
-        header = f"/workspace/{fname}:\n"
-        body = fold_ws(body or "")
-        # 头 + 正文一起占预算，避免轻量超 max_chars
-        if max_chars <= 0 or total + len(header) + len(body) <= max_chars:
-            sections.append(header + body)
-            total += len(header) + len(body)
-        else:
-            remain = max(0, max_chars - total - len(header))
-            if remain > 200:
-                cut = truncate_text(body, remain)
-                sections.append(header + cut)
-                total += len(header) + len(cut)
-    content = fold_ws("\n\n".join(sections))
+        manifest_lines.append(f"- /workspace/{fname} ({len(body or '')} 字符)")
+    manifest_text = "\n".join(manifest_lines)
+
+    # 2. 安全预算上限（扣除目录清单及段间换行间距，确保组装后严格 ≤ max_chars）
+    effective_max = SAFE_WORKSPACE_MAX_CHARS if max_chars <= 0 else max_chars
+    sep_overhead = 4 + max(0, len(files) - 1) * 2
+    body_budget = max(0, effective_max - len(manifest_text) - sep_overhead)
+
+    # 3. 预处理各文件
+    prepared: List[Tuple[str, str, str, int]] = []
+    for fname, body in files:
+        h = f"/workspace/{fname}:\n"
+        b = fold_ws(body or "")
+        prepared.append((fname, h, b, len(h) + len(b)))
+
+    total_needed = sum(p[3] for p in prepared)
+    sections: List[str] = []
+
+    if total_needed <= body_budget:
+        for fname, h, b, _ in prepared:
+            sections.append(h + b)
+    else:
+        # 多文件公平分配预算：给小文件全额，大文件均分剩余预算
+        unallocated_budget = body_budget
+        remaining_files = list(range(len(prepared)))
+        allocations = [0] * len(prepared)
+
+        changed = True
+        while changed and remaining_files:
+            changed = False
+            avg = unallocated_budget // len(remaining_files)
+            for idx in list(remaining_files):
+                req = prepared[idx][3]
+                if req <= avg:
+                    allocations[idx] = req
+                    unallocated_budget -= req
+                    remaining_files.remove(idx)
+                    changed = True
+
+        if remaining_files:
+            per_file = max(0, unallocated_budget // len(remaining_files))
+            for idx in remaining_files:
+                allocations[idx] = per_file
+
+        for i, (fname, h, b, _) in enumerate(prepared):
+            alloc = allocations[i]
+            avail_body = max(0, alloc - len(h))
+            if len(b) <= avail_body:
+                sections.append(h + b)
+            elif avail_body > 20:
+                cut_mark = f"\n[.../workspace/{fname} 内容已截断，可通过文档工具检索或查看...]"
+                cut = truncate_text(b, avail_body, mark=cut_mark)
+                sections.append(h + cut)
+            else:
+                sections.append(h.rstrip())
+
+    body_content = fold_ws("\n\n".join(s for s in sections if s))
+    full_workspace = f"{manifest_text}\n\n{body_content}" if body_content else manifest_text
+    if max_chars > 0 and len(full_workspace) > max_chars:
+        full_workspace = truncate_text(full_workspace, max_chars)
     custom_prompt = (custom_prompt or "").strip()
     if custom_prompt:
-        return f"{content}\n\n{custom_prompt}" if content else custom_prompt
-    return content
+        return f"{full_workspace}\n\n{custom_prompt}"
+    return full_workspace
+

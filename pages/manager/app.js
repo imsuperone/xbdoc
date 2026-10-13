@@ -1898,12 +1898,185 @@
   let settingsMeta = {};
   let settingsConfig = {};
 
+  let _customPlatforms = [];
+
+  function syncPlatformUI(cfg) {
+    if (!cfg) cfg = settingsConfig || {};
+    const allowed = String(cfg.allowed_platforms || "").trim();
+    const preset = String(cfg.platform_preset || "all").trim().toLowerCase();
+
+    const allowedInp = $("cfgAllowedPlatforms");
+    if (allowedInp && document.activeElement !== allowedInp) {
+      allowedInp.value = allowed;
+    }
+
+    const tokens = allowed
+      ? allowed.split(/[,，、;；\s]+/).map((t) => t.trim().toLowerCase()).filter(Boolean)
+      : [];
+    const isAll = tokens.length === 0 || tokens.includes("all") || tokens.includes("*");
+
+    const stdList = ["onebot", "aiocqhttp", "matrix", "telegram", "discord", "lark"];
+    _customPlatforms = isAll ? [] : tokens.filter((t) => !stdList.includes(t) && t !== "all" && t !== "*");
+
+    document.querySelectorAll(".plat-cb").forEach((cb) => {
+      const v = cb.value;
+      if (v === "all") cb.checked = isAll;
+      else cb.checked = !isAll && tokens.includes(v);
+    });
+
+    renderCustomPlatTags();
+
+    const sel = $("sel_platform_preset");
+    if (sel && document.activeElement !== sel) {
+      if (["all", "onebot", "onebot_matrix", "custom"].includes(preset)) {
+        sel.value = preset;
+      } else {
+        if (isAll) sel.value = "all";
+        else if (tokens.includes("matrix") && (tokens.includes("onebot") || tokens.includes("aiocqhttp")) && _customPlatforms.length === 0) sel.value = "onebot_matrix";
+        else if ((tokens.includes("onebot") || tokens.includes("aiocqhttp")) && tokens.length <= 2 && _customPlatforms.length === 0) sel.value = "onebot";
+        else sel.value = "custom";
+      }
+    }
+  }
+
+  function renderCustomPlatTags() {
+    const wrap = $("customPlatTagsWrap");
+    if (!wrap) return;
+    wrap.innerHTML = _customPlatforms.map((p, idx) => `
+      <span class="platform-tag-pill">
+        ${esc(p)}
+        <span class="tag-rm" data-rm-idx="${idx}" title="删除">&times;</span>
+      </span>
+    `).join("");
+  }
+
+  function savePlatformSelection(fromPreset) {
+    const sel = $("sel_platform_preset");
+    const presetVal = sel ? sel.value : "custom";
+    let finalStr = "";
+
+    if (fromPreset && presetVal === "onebot") {
+      finalStr = "onebot, aiocqhttp";
+      _customPlatforms = [];
+    } else if (fromPreset && presetVal === "onebot_matrix") {
+      finalStr = "onebot, aiocqhttp, matrix";
+      _customPlatforms = [];
+    } else if (fromPreset && presetVal === "all") {
+      finalStr = "all";
+      _customPlatforms = [];
+    } else {
+      const selected = [];
+      let isAll = false;
+      document.querySelectorAll(".plat-cb").forEach((cb) => {
+        if (cb.checked) {
+          if (cb.value === "all") isAll = true;
+          else selected.push(cb.value);
+        }
+      });
+      if (isAll || (selected.length === 0 && _customPlatforms.length === 0 && presetVal === "all")) {
+        finalStr = "all";
+        _customPlatforms = [];
+      } else {
+        const set = new Set([...selected, ..._customPlatforms]);
+        finalStr = Array.from(set).join(", ");
+      }
+    }
+
+    const inp = $("cfgAllowedPlatforms");
+    if (inp) inp.value = finalStr;
+
+    syncPlatformUI({
+      allowed_platforms: finalStr,
+      platform_preset: presetVal,
+    });
+  }
+
+  function initPlatformManager() {
+    const sel = $("sel_platform_preset");
+    if (sel) {
+      sel.addEventListener("change", () => {
+        savePlatformSelection(true);
+      });
+    }
+
+    const chipsWrap = $("platformChips");
+    if (chipsWrap) {
+      chipsWrap.addEventListener("change", (ev) => {
+        if (ev.target && ev.target.classList.contains("plat-cb")) {
+          const cb = ev.target;
+          if (cb.value === "all" && cb.checked) {
+            document.querySelectorAll(".plat-cb").forEach((other) => {
+              if (other !== cb) other.checked = false;
+            });
+            _customPlatforms = [];
+          } else if (cb.checked) {
+            const allCb = document.querySelector('.plat-cb[value="all"]');
+            if (allCb) allCb.checked = false;
+          }
+          if (sel) sel.value = "custom";
+          savePlatformSelection(false);
+        }
+      });
+    }
+
+    const addBtn = $("btn_add_custom_plat");
+    const customInp = $("inp_custom_plat");
+    if (addBtn && customInp) {
+      const doAdd = () => {
+        const val = customInp.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+        if (!val) return;
+        if (!_customPlatforms.includes(val)) {
+          _customPlatforms.push(val);
+          const allCb = document.querySelector('.plat-cb[value="all"]');
+          if (allCb) allCb.checked = false;
+          if (sel) sel.value = "custom";
+          savePlatformSelection(false);
+        }
+        customInp.value = "";
+      };
+      addBtn.addEventListener("click", doAdd);
+      customInp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          doAdd();
+        }
+      });
+    }
+
+    const tagsWrap = $("customPlatTagsWrap");
+    if (tagsWrap) {
+      tagsWrap.addEventListener("click", (e) => {
+        const rm = e.target.closest(".tag-rm");
+        if (rm) {
+          const idx = parseInt(rm.getAttribute("data-rm-idx"), 10);
+          if (!isNaN(idx) && idx >= 0 && idx < _customPlatforms.length) {
+            _customPlatforms.splice(idx, 1);
+            if (sel) sel.value = "custom";
+            savePlatformSelection(false);
+          }
+        }
+      });
+    }
+
+    const allowedInp = $("cfgAllowedPlatforms");
+    if (allowedInp) {
+      allowedInp.addEventListener("input", () => {
+        if (sel) sel.value = "custom";
+        syncPlatformUI({
+          allowed_platforms: allowedInp.value,
+          platform_preset: "custom",
+        });
+      });
+    }
+  }
+
   async function loadSettings() {
     try {
       const res = await api.get("settings");
       settingsMeta = res.meta || {};
       settingsConfig = res.config || {};
       renderSettings();
+      syncPlatformUI(settingsConfig);
       // 服务端配置是唯一真相源，回填完才揭开首帧
       if (applyUiPrefs(settingsConfig)) persistUiPrefs();
     } catch (e) {
@@ -1917,8 +2090,8 @@
   function renderSettings() {
     const container = $("settingsForm");
     if (!container) return;
-    // hidden 的 UI 偏好（主题色/深浅色）由顶栏控件维护，不进设置表单
-    const keys = Object.keys(settingsMeta).filter((k) => !(settingsMeta[k] || {}).hidden);
+    // hidden 的 UI 偏好及专属平台卡片配置项，不进通用设置表单
+    const keys = Object.keys(settingsMeta).filter((k) => !(settingsMeta[k] || {}).hidden && k !== "platform_preset" && k !== "allowed_platforms");
     if (!keys.length) {
       container.innerHTML = `<span class="helper">当前暂无可配置项。</span>`;
       return;
@@ -1961,6 +2134,7 @@
   function collectSettings() {
     const out = {};
     for (const [k, m] of Object.entries(settingsMeta)) {
+      if (k === "platform_preset" || k === "allowed_platforms") continue;
       if ((m.type || "int") === "bool") {
         const sw = document.querySelector(`[data-switch="${k}"]`);
         out[k] = sw ? sw.checked : Boolean(m.default);
@@ -1972,11 +2146,16 @@
         if (Number.isFinite(n)) out[k] = n;
       }
     }
+    const sel = $("sel_platform_preset");
+    out.platform_preset = sel ? sel.value : "all";
+    const allowedEl = $("cfgAllowedPlatforms");
+    out.allowed_platforms = allowedEl ? allowedEl.value.trim() : "";
     return out;
   }
 
   function applySettingsValues(src) {
     for (const [k, m] of Object.entries(settingsMeta)) {
+      if (k === "platform_preset" || k === "allowed_platforms") continue;
       const val = src[k] !== undefined ? src[k] : m.default;
       if ((m.type || "int") === "bool") {
         const sw = document.querySelector(`[data-switch="${k}"]`);
@@ -1986,9 +2165,11 @@
         if (el) el.value = val === undefined || val === null ? "" : val;
       }
     }
+    syncPlatformUI(src);
   }
 
   function initSettings() {
+    initPlatformManager();
     const saveBtn = $("saveSettingsBtn");
     if (saveBtn) {
       saveBtn.addEventListener("click", async () => {
@@ -1998,6 +2179,7 @@
           settingsConfig = res.config || config;
           settingsMeta = res.meta || settingsMeta;
           renderSettings();
+          syncPlatformUI(settingsConfig);
           showToast("插件设置已保存并生效。");
         } catch (err) {
           showToast("设置保存失败：" + err.message);

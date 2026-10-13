@@ -51,6 +51,9 @@ CONFIG_DEFAULTS: Dict[str, Any] = {
     "auto_inject": True,
     "fallback_inject": True,
     "allow_private_bind": True,
+    "enable_private": True,
+    "platform_preset": "all",
+    "allowed_platforms": "",
     "perf_log": False,
     # UI 偏好：AstrBot 用沙箱 iframe 载插件页，localStorage 被禁，
     # 主题色/深浅色只存本地刷新即丢，必须落服务端。见下方 CONFIG_META 同名键（hidden）。
@@ -94,6 +97,21 @@ CONFIG_META: Dict[str, Dict[str, Any]] = {
         "description": "允许私聊会话独立绑定",
         "hint": "关闭后仅群聊生效。",
         "type": "bool",
+    },
+    "enable_private": {
+        "description": "私聊独立开关",
+        "hint": "开启后私聊支持文档注入与独立绑定；关闭后仅群聊生效。",
+        "type": "bool",
+    },
+    "platform_preset": {
+        "description": "生效平台快速选择",
+        "hint": "下拉快速选择生效平台组合。若选择「自定义」，则由下方「允许生效的平台」自定义设置生效。留空或 all 表示允许所有平台。",
+        "type": "string",
+    },
+    "allowed_platforms": {
+        "description": "允许生效的平台（自定义/高级）",
+        "hint": "当平台选择为「自定义」时生效。以逗号分隔允许生效的平台标识（如 onebot, matrix, telegram 等）。留空或填 all 表示允许所有平台。",
+        "type": "string",
     },
     "perf_log": {
         "description": "性能日志（排查回复慢）",
@@ -400,6 +418,33 @@ class XbdocStoreMixin:
         except Exception:
             return ""
 
+    def is_platform_allowed(self, platform: str = "") -> bool:
+        """检查指定平台是否允许运行本插件（支持 platform_preset 预设与 allowed_platforms 自定义）。"""
+        preset = str(self._cfg("platform_preset") or "all").strip().lower()
+        p = (platform or "").strip().lower()
+        if preset in ("all", "*", ""):
+            return True
+        if preset in ("onebot", "qq"):
+            if not p:
+                return True
+            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11")
+        if preset in ("onebot_matrix", "onebot,matrix", "matrix_onebot"):
+            if not p:
+                return True
+            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11", "matrix")
+
+        allowed = str(self._cfg("allowed_platforms") or "").strip()
+        if not allowed or allowed.lower() in ("all", "*", "any"):
+            return True
+        tokens = [t.strip().lower() for t in re.split(r"[,，、;；\s]+", allowed) if t.strip()]
+        if not p:
+            return True
+        if "all" in tokens or "*" in tokens:
+            return True
+        if p in ("aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11"):
+            p = "onebot"
+        return p in tokens or ("onebot" in tokens and p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp"))
+
     def _record_seen_group(self, event: AstrMessageEvent) -> None:
         """记录会话基础信息，供 WebUI 模糊搜索/绑定选用（群聊与私聊通用）。"""
         try:
@@ -484,10 +529,11 @@ class XbdocStoreMixin:
                     uid = ck.split(":")[-1]
             if not uid or "probe" in uid.lower():
                 return
-            uid_digits = re.sub(r"\D", "", uid)
-            if not uid_digits:
-                return
-            uid = uid_digits
+            if platform in ("onebot", "aiocqhttp"):
+                uid_digits = re.sub(r"\D", "", uid)
+                if not uid_digits:
+                    return
+                uid = uid_digits
             key = f"private:{platform}:{uid}" if platform else f"private:{uid}"
 
             now = int(time.time())
@@ -781,14 +827,15 @@ class XbdocStoreMixin:
             return f"group:{tail}" if tail else ""
         if s.isdigit():
             return f"group:{s}"
-        m = re.search(r"(?:GroupMessage|group)\s*:\s*(\d+)", s, re.IGNORECASE)
+        m = re.search(r"(?:GroupMessage|group)\s*:\s*(\S+)", s, re.IGNORECASE)
         if m:
-            return f"group:{m.group(1)}"
+            gid = m.group(1).rstrip(",;)>]")
+            return f"group:{gid}"
         # 私聊不再冒充 group，避免私聊号与群号碰撞；统一归一为 private:xxx
         mp = re.search(r"(?:FriendMessage|PrivateMessage|Private|Friend|User)\s*:\s*(\S+)", s, re.IGNORECASE)
         if mp:
-            uid = re.sub(r"\D", "", mp.group(1)) or mp.group(1).strip()
-            return f"private:{uid}" if uid else s
+            raw_uid = mp.group(1).rstrip(",;)>]")
+            return f"private:{raw_uid}" if raw_uid else s
         parts = s.split(":")
         if parts and parts[-1].isdigit():
             # 无法判断群/私时保守返回原串，由调用方按群优先处理
@@ -823,14 +870,16 @@ class XbdocStoreMixin:
             for attr in ("sender_id", "user_id", "qq", "uid"):
                 uid = str(getattr(event_or_str, attr, "") or "").strip()
                 if uid:
-                    uid = re.sub(r"\D", "", uid) or uid
+                    if plat in ("onebot", "aiocqhttp"):
+                        uid = re.sub(r"\D", "", uid) or uid
                     return f"private:{plat}:{uid}" if plat else f"private:{uid}"
             msg_obj = getattr(event_or_str, "message_obj", None)
             sender = getattr(msg_obj, "sender", None) if msg_obj is not None else None
             if sender is not None:
                 uid = str(getattr(sender, "user_id", "") or getattr(sender, "id", "") or "").strip()
                 if uid:
-                    uid = re.sub(r"\D", "", uid) or uid
+                    if plat in ("onebot", "aiocqhttp"):
+                        uid = re.sub(r"\D", "", uid) or uid
                     return f"private:{plat}:{uid}" if plat else f"private:{uid}"
         except Exception:
             pass

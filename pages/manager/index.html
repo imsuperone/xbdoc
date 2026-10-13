@@ -249,8 +249,73 @@
 
       <!-- ==================== Tab 3: 插件设置 ==================== -->
       <section class="settings-section" data-section="tab-settings">
+        <!-- Card: 生效平台选择与管理 -->
+        <div class="m3-card" id="card_platform_mgr">
+          <div class="card-row-split">
+            <div>
+              <h2 class="card-title">生效平台选择与管理</h2>
+              <p class="card-desc">控制本插件在哪些平台运行。提供预设下拉选择、常用平台一键勾选，并支持添加自定义平台。</p>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 10px;">
+            <label class="form-label" for="sel_platform_preset">快速模式（下拉选择）</label>
+            <select class="m3-field" id="sel_platform_preset">
+              <option value="all">全部平台生效（All，默认推荐）</option>
+              <option value="onebot">仅 QQ / OneBot 平台</option>
+              <option value="onebot_matrix">QQ + Matrix 平台</option>
+              <option value="custom">自定义组合（勾选下方平台或输入添加）</option>
+            </select>
+          </div>
+          <div class="form-group" id="platformCheckboxesGroup" style="margin-top: 12px;">
+            <label class="form-label">勾选允许生效的平台</label>
+            <div class="platform-chips-wrap" id="platformChips">
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="onebot" />
+                <span>QQ / OneBot</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="aiocqhttp" />
+                <span>aiocqhttp</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="matrix" />
+                <span>Matrix</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="telegram" />
+                <span>Telegram</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="discord" />
+                <span>Discord</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="lark" />
+                <span>飞书 / Lark</span>
+              </label>
+              <label class="platform-chip-label">
+                <input type="checkbox" class="plat-cb" value="all" />
+                <span>全部平台 (All)</span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label">自定义平台标识（选填）</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" class="m3-field" id="inp_custom_plat" placeholder="输入其他平台英文标识（如 dingtalk, kook, wechat）" style="flex:1;" />
+              <button type="button" class="m3-btn secondary-btn" id="btn_add_custom_plat">+ 添加</button>
+            </div>
+            <div id="customPlatTagsWrap" class="platform-tags-wrap" style="margin-top: 8px;"></div>
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label class="form-label" for="cfgAllowedPlatforms">生效平台标识列表（与上方勾选实时双向同步）</label>
+            <input type="text" class="m3-field" id="cfgAllowedPlatforms" placeholder="留空或 all 表示允许所有平台" />
+            <span class="helper">以逗号分隔平台标识（如 <code>onebot, matrix</code>）；留空或填 <code>all</code> 表示所有平台。上方勾选或添加会自动更新。</span>
+          </div>
+        </div>
+
         <div class="m3-card">
-          <h2 class="card-title">插件设置</h2>
+          <h2 class="card-title">插件运行参数设置</h2>
           <p class="card-desc">AstrBot 插件配置项已迁移至本页，修改后将即时生效并持久保存至数据目录。</p>
 
           <div id="settingsForm" class="settings-form">
