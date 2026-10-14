@@ -351,14 +351,17 @@ class XbdocStoreMixin:
 
 
     def _save_seen(self) -> None:
-        if len(self._seen_groups) > 500:
-            items = sorted(
-                self._seen_groups.items(),
-                key=lambda kv: kv[1].get("last_seen", 0),
-                reverse=True,
-            )[:500]
-            self._seen_groups = dict(items)
-        self._save_json(self.seen_path, self._seen_groups)
+        with self._save_lock:
+            items = list(self._seen_groups.items())
+            if len(items) > 500:
+                items = sorted(
+                    items,
+                    key=lambda kv: kv[1].get("last_seen", 0),
+                    reverse=True,
+                )[:500]
+                self._seen_groups = dict(items)
+            payload = dict(self._seen_groups)
+        self._save_json(self.seen_path, payload)
 
 
     @staticmethod
@@ -379,6 +382,7 @@ class XbdocStoreMixin:
         if cand.lower() in (
             "aiocqhttp", "aihttpcq", "cqhttp", "onebot",
             "onebot_v11", "onebotv11", "onebot11",
+            "napcat", "lagrange", "llonebot", "gocqhttp", "qq", "chronocat",
         ):
             return "onebot"
         return cand
@@ -427,11 +431,17 @@ class XbdocStoreMixin:
         if preset in ("onebot", "qq"):
             if not p:
                 return True
-            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11")
+            return p in (
+                "onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11",
+                "napcat", "lagrange", "llonebot", "gocqhttp", "qq", "chronocat",
+            )
         if preset in ("onebot_matrix", "onebot,matrix", "matrix_onebot"):
             if not p:
                 return True
-            return p in ("onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11", "matrix")
+            return p in (
+                "onebot", "aiocqhttp", "aihttpcq", "cqhttp", "onebot11", "onebot_v11",
+                "napcat", "lagrange", "llonebot", "gocqhttp", "qq", "chronocat", "matrix",
+            )
 
         allowed = str(self._cfg("allowed_platforms") or "").strip()
         if not allowed or allowed.lower() in ("all", "*", "any"):

@@ -142,13 +142,18 @@ def extract_text_from_bytes(suffix: str, data: bytes) -> str:
             raise RuntimeError("缺少 pypdf 依赖，请 pip install pypdf 后重试。") from e
         reader = PdfReader(io.BytesIO(data))
         texts = []
+        _chars = 0
         for p in reader.pages:
             try:
                 t = p.extract_text()
             except Exception:
                 continue
             if t and t.strip():
-                texts.append(t.strip())
+                s = t.strip()
+                texts.append(s)
+                _chars += len(s)
+                if _chars >= MAX_EXTRACT_CHARS:
+                    break
         return _cap_extract("\n\n".join(texts))
     if suffix == ".docx":
         try:
@@ -163,17 +168,22 @@ def extract_text_from_bytes(suffix: str, data: bytes) -> str:
             from docx.table import Table
             from docx.text.paragraph import Paragraph
             parts = []
+            _chars = 0
             for child in doc.element.body.iterchildren():
                 if isinstance(child, CT_P):
                     t = Paragraph(child, doc).text.strip()
                     if t:
                         parts.append(t)
+                        _chars += len(t)
                 elif isinstance(child, CT_Tbl):
                     for row in Table(child, doc).rows:
                         for cell in row.cells:
                             t = (cell.text or "").strip()
                             if t:
                                 parts.append(t)
+                                _chars += len(t)
+                if _chars >= MAX_EXTRACT_CHARS:
+                    break
             if parts:
                 return _cap_extract("\n".join(parts))
         except Exception:

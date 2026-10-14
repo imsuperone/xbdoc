@@ -189,8 +189,9 @@ class XbdocWebAPIMixin:
 
 
     async def _api_list_bindings(self):
-        # 只读接口：_bindings 在启动加载与写入口已完成标准化，直接读取构建视图
-        _view = dict(self._bindings or {})
+        # 只读接口：_bindings 在启动加载与写入口已完成标准化，加锁快照直接读取构建视图
+        with self._save_lock:
+            _view = dict(self._bindings or {})
         return json_response({
             "bindings": {
                 k: self._binding_entry_view(k, ent)
@@ -248,7 +249,9 @@ class XbdocWebAPIMixin:
 
     async def _api_export_bindings(self):
         """导出全部会话绑定：即 bindings 原样 map，前端存文件，回导时原样吃，无额外格式。"""
-        return json_response(dict(self._bindings or {}))
+        with self._save_lock:
+            payload = dict(self._bindings or {})
+        return json_response(payload)
 
 
     async def _api_import_bindings(self):

@@ -80,7 +80,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
 
         # BM25 全局量：N/avg_len/idf 在绑定文档全量切片上一次算好，Counter 全走缓存；
         # 按（绑定集合 + 各文档切片数）做多槽缓存，多会话交替提问不再反复重算
-        _key = tuple((d, len(self._get_chunk_counters(d))) for d in sorted(set(doc_ids)) if d in self._index)
+        _key = tuple((d, int(self._index[d].get("chunks", 0))) for d in sorted(set(doc_ids)) if d in self._index)
         _cache = getattr(self, "_bm25_cache", None)
         if not isinstance(_cache, dict):
             _cache = self._bm25_cache = {}
@@ -133,8 +133,9 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 tf = counters[idx] if idx < len(counters) else Counter()
                 doc_len = lengths[idx] if idx < len(lengths) else 0
                 s = score_chunk_bm25(qtokens, tf, doc_len, _avg_len, _idf) if qtokens else 0.0
-                if fname_hit:
-                    # 文件名命中只做小幅加权（保底召回），避免淹没 BM25 相关度排序
+                if fname_hit and (idx == 0 or s > 0):
+                    # 文件名命中对首片（文档概览/标题）或已有关键词命中的切片做加权，
+                    # 避免完全无关的切片被全量塞入导致挤占精准内容
                     s += 3.0
                 if s > 0:
                     scored.append({
