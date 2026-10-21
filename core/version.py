@@ -23,4 +23,4 @@ def get_version(plugin_base: str = "") -> str:
                             return v
         except Exception:
             pass
-    return "1.2.32"
+    return "1.2.33"

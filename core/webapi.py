@@ -56,7 +56,7 @@ class XbdocWebAPIMixin:
             from .version import get_version
             ver = get_version()
         except Exception:
-            ver = "1.2.32"
+            ver = "1.2.33"
         return json_response({
             "ok": True,
             "status": "ok",
