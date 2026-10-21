@@ -36,6 +36,7 @@ class XbdocWebAPIMixin:
         if not _HAS_WEB_API:
             return
         reg = self.context.register_web_api
+        reg(f"/{PLUGIN_NAME}/version", self._api_get_version, ["GET"], "获取插件版本号")
         reg(f"/{PLUGIN_NAME}/docs", self._api_list_docs, ["GET"], "列出文档")
         reg(f"/{PLUGIN_NAME}/docs/upload", self._api_upload_doc, ["POST"], "上传文档")
         reg(f"/{PLUGIN_NAME}/docs/delete", self._api_delete_doc, ["POST"], "删除文档")
@@ -49,6 +50,19 @@ class XbdocWebAPIMixin:
         reg(f"/{PLUGIN_NAME}/bindings/import", self._api_import_bindings, ["POST"], "导入绑定备份")
         reg(f"/{PLUGIN_NAME}/settings", self._api_get_settings, ["GET"], "读取插件设置")
         reg(f"/{PLUGIN_NAME}/settings/save", self._api_save_settings, ["POST"], "保存插件设置")
+
+    async def _api_get_version(self):
+        try:
+            from .version import get_version
+            ver = get_version()
+        except Exception:
+            ver = "1.2.32"
+        return json_response({
+            "ok": True,
+            "status": "ok",
+            "version": ver,
+            "plugin": PLUGIN_NAME,
+        })
 
     async def _api_get_settings(self):
         return json_response({

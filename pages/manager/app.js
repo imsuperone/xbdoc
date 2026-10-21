@@ -2222,6 +2222,19 @@
     return 0;
   }
 
+  async function fetchAndApplyVersion() {
+    try {
+      const res = await window.DocMemoryApi.get("version");
+      const v = res && (res.version || (res.data && res.data.version));
+      if (v) {
+        document.querySelectorAll(".version-tag").forEach((el) => {
+          el.textContent = v;
+          el.dataset.ver = v;
+        });
+      }
+    } catch (_) {}
+  }
+
   function checkForUpdate() {
     try {
       const tag = document.querySelector(".version-tag");
@@ -2279,6 +2292,7 @@
     initSettings();
     initRefreshButton();
     updatePromptCount();
+    fetchAndApplyVersion();
 
     // 2. Load critical first-screen data first, then prefetch secondary tabs
     try {
