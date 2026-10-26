@@ -5,6 +5,30 @@ __pycache__/
 *.tmp
 *.bak
 data_store/
+data/
+
+# Secrets & credentials (strict privacy protection)
+.env
+.env.*
+*.key
+*.pem
+*.cert
+*.crt
+*.token
+*.secret
+credentials.json
+auth.json
+secrets.json
+webdav_secret.json
+**/webdav_secret.json
+
+# Databases & logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.log
 
 # AI 内部文档只入本地，不推 GitHub
 aidocs/
@@ -12,3 +36,7 @@ aidocs/
 # 测试与临时件不进 GitHub（zip 已由 pack.py 排除）
 tests/
 .omo/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
