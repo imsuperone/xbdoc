@@ -23,4 +23,5 @@ def get_version(plugin_base: str = "") -> str:
                             return v
         except Exception:
             pass
-    return "1.2.33"
+    # 读不到就明确告知，避免升级后页面显示旧版本号
+    return "unknown"

@@ -3,6 +3,7 @@
 被主插件多继承（Mixin），无 @filter 装饰方法。
 """
 
+import asyncio
 import time
 from typing import Any, Dict, List
 
@@ -56,7 +57,7 @@ class XbdocWebAPIMixin:
             from .version import get_version
             ver = get_version()
         except Exception:
-            ver = "1.2.33"
+            ver = "unknown"
         return json_response({
             "ok": True,
             "status": "ok",
@@ -149,7 +150,7 @@ class XbdocWebAPIMixin:
         meta = self._index.get(doc_id)
         if not meta:
             return error_response("文档不存在", status_code=404)
-        chunks = self._load_chunks(doc_id)
+        chunks = await asyncio.to_thread(self._load_chunks, doc_id)
         n = max(1, min(int(chunk or 1), max(1, len(chunks))))
         preview = chunks[n - 1][:3000] if chunks else ""
         return json_response({"meta": meta, "chunk": n, "total": len(chunks), "preview": preview})
@@ -173,9 +174,9 @@ class XbdocWebAPIMixin:
         完整键 -> 老格式键 -> 群裸 gid 键，逐级回落。
         """
         ids = ent.get("doc_ids", [])
-        kind, _plat, ident = self._split_session_key(str(key))
+        kind, _, ident = self._split_session_key(str(key))
         if not kind:
-            kind, _plat, ident = "group", None, str(key).strip().split(":")[-1]
+            kind, ident = "group", str(key).strip().split(":")[-1]
         gid = ident
         _seen = self._seen_groups.get(str(key)) or {}
         if not _seen:

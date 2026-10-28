@@ -3,6 +3,7 @@
 被主插件多继承（Mixin），无 @filter 装饰方法，由主入口 doc_cmd 分发调用。
 """
 
+import asyncio
 import hashlib
 import time
 from typing import Any, Dict, List, Optional
@@ -296,7 +297,8 @@ class XbdocCommandsMixin:
             n = max(1, int(num or "1"))
         except Exception:
             n = 1
-        chunks = self._load_chunks(doc_id)
+        # 分片首次读取要落盘反序列化，放到线程池，避免阻塞事件循环
+        chunks = await asyncio.to_thread(self._load_chunks, doc_id)
         if not chunks:
             yield event.plain_result("⚠️ 该文档暂无可用文本切片。")
             return
@@ -464,7 +466,9 @@ class XbdocCommandsMixin:
         raw = " ".join(args).strip().lower()
         # 裸写 ignore_history 改走 set_session_flag 写口（自带锁+落盘+prune），消息在锁外拼（审计 #3/#8）
         key, _ = self._resolve_session(event, create=False)
-        if raw in ("off", "恢复", "false", "0", "no_off", "reset", "yes"):
+        # 注意：yes/on 属于“开启断史”，不能混进恢复别名，否则语义反直觉
+        restore = raw in ("off", "恢复", "false", "0", "no_off", "reset")
+        if restore:
             if self._bindings.get(key):
                 # 已有条目才写：无条目不开空壳、不落盘（与旧行为一致）
                 self.set_session_flag(key, "ignore_history", False)
@@ -481,7 +485,7 @@ class XbdocCommandsMixin:
             )
 
         # 同步重置当前底层对话会话 ID（仅开启断史时；字段不存在则跳过）
-        if raw not in ("off", "恢复", "false", "0", "no_off", "reset", "yes"):
+        if not restore:
             try:
                 for s_attr in ("session", "_session", "conversation"):
                     sess_obj = getattr(event, s_attr, None)

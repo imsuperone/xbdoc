@@ -215,10 +215,21 @@
   // 调用方语义处理：默认返回 ""（选择/载入语义：miss 不认领）；传 { claimPrefix: "group:" }
   // （保存路径）时，纯数字输入补前缀成为新 key。群聊/私聊前缀都不命中的尾段匹配（如
   // 老脏键 xxx:123）同样认领——与原 findBindingKey 一致，保存不再另起炉灶写第二个 key。
+  // 必须与后端 core/store.py::_clean_platform 的别名表保持一致，否则同一把 key
+  // 会前后端归一成两个值，出现“后端已绑定、前端显示未绑定”。
   const _ONEBOT_ALIASES = new Set([
-    "aiocqhttp", "aihttpcq", "cqhttp", "napcat", "llonebot",
-    "lagrange", "gocqhttp", "onebot_v11", "qq"
+    "aiocqhttp", "aihttpcq", "cqhttp", "onebot", "onebot_v11", "onebotv11",
+    "onebot11", "napcat", "lagrange", "llonebot", "gocqhttp", "qq", "chronocat"
   ]);
+
+  // 与后端 store.py::_MODE_PRIORITY 同序：数字越大越强
+  const _MODE_PRIORITY = { none: -1, reference: 0, system: 1, workspace: 2 };
+
+  function strongerMode(a, b) {
+    const pa = _MODE_PRIORITY[a] ?? 0;
+    const pb = _MODE_PRIORITY[b] ?? 0;
+    return pb > pa ? b : a;
+  }
 
   function normalizeSessionKeyClient(rawKey) {
     const s = String(rawKey || "").trim();
@@ -715,7 +726,8 @@
           if (!prev.prompt && entry.prompt) prev.prompt = entry.prompt;
           prev.shield = Boolean(prev.shield || entry.shield);
           prev.force_system_prompt = Boolean(prev.force_system_prompt || entry.force_system_prompt);
-          if ((!prev.mode || prev.mode === "none") && entry.mode) prev.mode = entry.mode;
+          // 与后端 _merge_entries 一致：取强度更高的 mode，而不是“prev 为空才覆盖”
+          prev.mode = strongerMode(prev.mode || "none", entry.mode || "none");
         }
       });
       bindingsMap = cleanMap;

@@ -30,22 +30,17 @@
   // 全局唯一的探测锁：首屏三个并发请求共享同一次探测，不再各扫 5 个前缀
   let _detectFlight = null;
 
-  const GET_PREFIXES = [
+  // 插件 API 前缀候选：GET / POST / 下载共用一份，避免多份表各改各的
+  const PREFIXES = [
     `/${PLUGIN_ID}/`,
     `/api/plugins/${PLUGIN_ID}/`,
     `api/`,
     `./api/`,
     `./`,
   ];
-  const POST_PREFIXES = [
-    `/${PLUGIN_ID}/`,
-    `/api/plugins/${PLUGIN_ID}/`,
-    `api/`,
-    `./api/`,
-    `./`,
-  ];
+  const DEFAULT_TIMEOUT = 60000;
 
-  async function tryFetchJson(url, options = {}, timeoutMs = 0) {
+  async function tryFetchJson(url, options = {}, timeoutMs = DEFAULT_TIMEOUT) {
     const ctrl = (timeoutMs > 0 && typeof AbortController === "function" && !(options && options.signal))
       ? new AbortController()
       : null;
@@ -65,10 +60,10 @@
 
   // 带并发合并的前缀请求：已有探测结果直连；已有扫描在飞则等它结束复用结果；
   // 都没有才自己扫一遍。首屏三个并发请求只产生一次扫描。
-  async function _requestWithPrefixes(prefixes, urlOf, options) {
+  async function _requestWithPrefixes(urlOf, options, timeoutMs = DEFAULT_TIMEOUT) {
     if (_detectedPrefix) {
       try {
-        return await tryFetchJson(urlOf(_detectedPrefix), options);
+        return await tryFetchJson(urlOf(_detectedPrefix), options, timeoutMs);
       } catch (e) {}
     }
     if (_detectFlight) {
@@ -77,14 +72,18 @@
       } catch (e) {}
       if (_detectedPrefix) {
         try {
-          return await tryFetchJson(urlOf(_detectedPrefix), options);
+          return await tryFetchJson(urlOf(_detectedPrefix), options, timeoutMs);
         } catch (e) {}
       }
     }
     const flight = (async () => {
-      for (const p of prefixes) {
+      for (const p of PREFIXES) {
         try {
-          const r = await tryFetchJson(urlOf(p), options, 2500);
+          // 探测阶段 GET 用短超时，避免一个错前缀把首屏拖住；
+          // POST（尤其大文件上传）必须用完整超时，否则正确前缀也会被误杀
+          const isWrite = !!(options && options.method && options.method !== "GET");
+          const probeTimeout = isWrite ? timeoutMs : Math.min(timeoutMs, 4000);
+          const r = await tryFetchJson(urlOf(p), options, probeTimeout);
           _detectedPrefix = p;
           return r;
         } catch (e) {}
@@ -134,13 +133,13 @@
       const queryStr = qs ? `?${qs}` : "";
 
       try {
-        return await _requestWithPrefixes(GET_PREFIXES, (p) => `${p}${endpoint}${queryStr}`, undefined);
+        return await _requestWithPrefixes((p) => `${p}${endpoint}${queryStr}`, undefined);
       } catch (e) {
         throw new Error(`无法连接至插件后端 API (${endpoint})`);
       }
     },
 
-    async post(endpoint, data = {}) {
+    async post(endpoint, data = {}, timeoutMs = DEFAULT_TIMEOUT) {
       const b = getBridge();
       if (b && typeof b.apiPost === "function") {
         return await b.apiPost(endpoint, data);
@@ -153,7 +152,7 @@
       };
 
       try {
-        return await _requestWithPrefixes(POST_PREFIXES, (p) => `${p}${endpoint}`, options);
+        return await _requestWithPrefixes((p) => `${p}${endpoint}`, options, timeoutMs);
       } catch (e) {
         throw new Error(`请求后端失败 (${endpoint})`);
       }
@@ -179,10 +178,11 @@
         throw new Error("上传请求未成功发送：文件内容为空");
       }
       try {
+        // 大文件 base64 上传可能很慢，单独放宽到 5 分钟
         return await api.post(endpoint, {
           filename: file.name,
           file_base64: b64,
-        });
+        }, 300000);
       } catch (e) {
         throw new Error(`上传请求未成功发送：${e.message}`);
       }
@@ -194,12 +194,14 @@
         return await b.download(endpoint, params);
       }
 
+      // <a download> 无法像 fetch 那样逐个前缀重试，先确保前缀已探测出来
+      if (!_detectedPrefix) {
+        try {
+          await api.get("version");
+        } catch (e) {}
+      }
+      const pfx = _detectedPrefix || PREFIXES[0];
       const qs = new URLSearchParams(params).toString();
-      // 已探测前缀优先，其次走标准 POST 前缀表（与 upload 共用，不再各写一份）
-      const prefixes = _detectedPrefix
-        ? [_detectedPrefix, ...POST_PREFIXES]
-        : POST_PREFIXES;
-      const pfx = prefixes[0];
       const url = `${pfx}${endpoint}${qs ? "?" + qs : ""}`;
 
       const link = document.createElement("a");
