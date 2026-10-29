@@ -17,17 +17,18 @@ class StoreSessionsMixin:
         """平台名清洗：字符串直接用；PlatformMetadata 之类对象取 .name；其他一律丢弃。
 
         绝不 str() 整个对象——那会产生 PlatformMetadata(name=...) 这种垃圾 key。
+        返回统一小写的规范平台 id（别名归一 + 大小写归一，全插件唯一实现）。
         """
         if isinstance(v, str):
-            cand = v.strip()
+            cand = v.strip().lower()
         elif v is None:
             return ""
         else:
             name = getattr(v, "name", None)
-            cand = name.strip() if isinstance(name, str) else ""
-        if not cand or len(cand) > 32 or not re.match(r"^[A-Za-z0-9_\-]+$", cand):
+            cand = name.strip().lower() if isinstance(name, str) else ""
+        if not cand or len(cand) > 32 or not re.match(r"^[a-z0-9_\-]+$", cand):
             return ""
-        if cand.lower() in (
+        if cand in (
             "aiocqhttp", "aihttpcq", "cqhttp", "onebot",
             "onebot_v11", "onebotv11", "onebot11",
             "napcat", "lagrange", "llonebot", "gocqhttp", "qq", "chronocat",

@@ -575,20 +575,30 @@ class XbdocWebAPIMixin:
                      str(meta.get("group_name") or "").strip(), plat or "onebot",
                      int(meta.get("msg_count") or 0), int(meta.get("last_seen") or 0))
 
-        # 只有绑定、无 seen 记录的会话（空壳）同样列出
+        # 只有绑定、无 seen 记录的会话（空壳）同样列出；已有条目只补绑定标记与
+        # session_key（现 key 未绑定时才接管），不覆盖 seen 带来的展示信息
         for k in bound:
             kind, _p, ident = self._split_session_key(k)
             if not ident:
                 continue
-            if kind == "private":
-                if not ident.isdigit():
+            dedup = f"{kind}:{ident}"
+            if kind == "private" and not ident.isdigit():
+                continue
+            if kind == "group":
+                ident = ident.split(":")[-1]
+                if not ident or "probe" in ident.lower():
                     continue
+                dedup = f"group:{ident}"
+            if dedup in items:
+                ent = items[dedup]
+                ent["bound"] = True
+                if ent["session_key"] not in bound:
+                    ent["session_key"] = k
+                continue
+            if kind == "private":
                 _put("private", ident, k, "", self._clean_platform(_p or ""), 0, 0)
             else:
-                gid = ident.split(":")[-1]
-                if not gid or "probe" in gid.lower():
-                    continue
-                _put("group", gid, k, "", self._clean_platform(_p or "") or "onebot", 0, 0)
+                _put("group", ident, k, "", self._clean_platform(_p or "") or "onebot", 0, 0)
 
         for g in items.values():
             if not g["display"]:

@@ -9,9 +9,10 @@
 - **架构收敛（一接口一实现）**：
   - 检索编排 `retrieve` / `build_inject_text` 从 `main.py` 移入 `core/store/search.py`，`main.py` 只剩入口 + LLM 钩子 + 指令分发；
   - 平台别名只在 `_clean_platform` 一处，`is_platform_allowed` 改为预设串展开（`onebot` / `onebot_matrix` / `custom`），删除 30 行硬编码白名单；
+  - `_clean_platform` 输出统一小写（平台 id 规范形），`WebChat`/`OneBot` 等大小写混写在 seen 记录、白名单、key 归一全部一致，存量混写 key 加载时自动迁移；
   - seen 记录群/私两份合并为 `_record_seen` 单实现；会话解析候选表合并为 `_candidate_keys`（`_session_keys` 删除）；
   - 三个缓存桶的「LRU 上限 + 写后复验」抽成 `_cache_put`；
-  - WebUI 群合并视图 `_get_all_merged_groups` 由 115 行双份分支收紧为一份。
+  - WebUI 群合并视图 `_get_all_merged_groups` 由 115 行双份分支收紧为一份，绑定空壳不再覆盖 seen 展示信息，session_key 接管规则确定化（旧实现受 set 遍历序影响）。
 - **冗余清理**：前端删除对服务端已规范化 key 的二次归一与合并循环（`strongerMode` / `_MODE_PRIORITY` / `normalizeSessionKeyClient` 随之移除）；`res.data?.` 双层兜底、`/bindings/save` 回包冗余字段、10 余个仅模块内使用的 `App.*` 导出、4 个死 CSS 类、函数内重复 import 一并删除；首屏绑定预取不再等 200ms 定时器。
 - **文档对齐**：README 删除不存在的「旧数据迁移」声明；接口总账重建于 `aidocs/ARCHITECTURE.md`（Web 13 条 / 聊天 15 组 / LLM 2 工具 + 1 注入，一接口一实现对照）。
 
