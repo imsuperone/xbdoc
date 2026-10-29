@@ -6,7 +6,6 @@
 import asyncio
 import base64
 import functools
-import inspect
 import time
 from typing import Any, Dict, List
 
@@ -276,7 +275,11 @@ class XbdocWebAPIMixin:
 
 
     def _find_all_bots(self) -> List[Any]:
-        """定位平台适配器：优先走官方 platform_manager.platform_insts，其次事件缓存，最后有界泛遍历。"""
+        """定位平台适配器：官方 platform_manager.platform_insts 优先，其次消息事件缓存。
+
+        拉群是增强功能而非关键路径：两通道都拿不到时返回空列表，
+        /groups/fetch 回包 debug 会带原因，seen 记录仍随消息自动积累。
+        """
         try:  # 定位结果缓存 60 秒
             _cached = getattr(self, "_bots_cache", None) or {}
             if _cached.get("targets") and (time.time() - float(_cached.get("ts", 0))) < 60:
@@ -344,49 +347,6 @@ class XbdocWebAPIMixin:
         if targets:
             self._bots_cache = {"targets": list(targets), "ts": time.time()}
             return targets
-
-        # 3. 兜底：有界泛遍历
-        visited: set = set()
-        budget = [800]
-
-        def _traverse(obj, depth=0):
-            if depth > 4 or obj is None or isinstance(obj, functools.partial) or budget[0] <= 0:
-                return
-            oid = id(obj)
-            if oid in visited:
-                return
-            visited.add(oid)
-            budget[0] -= 1
-            _add(obj)
-            try:
-                attrs = dir(obj)
-            except Exception:
-                return
-            for attr in attrs:
-                if attr.startswith("__"):
-                    continue
-                lower = attr.lower()
-                if not any(k in lower for k in ("platform", "adapter", "bot", "client", "connection", "ws", "manager", "inst")):
-                    continue
-                val = _safe_getattr(obj, attr)
-                if val is None or callable(val) or inspect.isclass(val):
-                    continue
-                if isinstance(val, (list, tuple, set)):
-                    for item in val:
-                        _traverse(item, depth + 1)
-                elif isinstance(val, dict):
-                    for item in val.values():
-                        _traverse(item, depth + 1)
-                else:
-                    _traverse(val, depth + 1)
-
-        try:
-            _traverse(self.context, 0)
-        except Exception:
-            pass
-        self._bots_cache = {"targets": list(targets), "ts": time.time()}
-        return targets
-
 
     async def _fetch_platform_groups(self):
         """主动向平台适配器拉取群组（顺序尝试标准动作，避免向 CQHttp 并发轰炸不存在的 action 导致超时）。"""
