@@ -7,7 +7,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict
+from collections import Counter
+from typing import Any, Dict, List, Optional
 
 from astrbot.api import logger
 

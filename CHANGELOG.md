@@ -1,5 +1,11 @@
 # 更新日志 (Changelog)
 
+## v1.2.38 (2026-10-30)
+
+- **修复插件加载失败（`name 'Optional' is not defined`）**：`core/store/persistence.py` 自 v1.2.35 拆分起缺失 `Optional`/`List`/`Counter` 导入。Python 3.14 PEP 649 注解延迟求值使 import 与既有测试全部静默通过，而 AstrBot 加载器内省插件方法注解时才触发 NameError——v1.2.37 实际不可加载，本版立即接替。
+- **加载器口径全程实测**（AstrBot v4.29.3 真实框架）：① import ② command handler `inspect.signature(eval_str=True)`（加载器唯一注解求值点，已核源码）③ 插件自有 MRO 109 个方法注解全量 `get_type_hints` ④ 完整实例化（含 `_init_store`），修复前 ②③ 均复现 `name 'Optional' is not defined`，修复后全绿；修复后同步部署并复验部署副本。
+- **新增护栏 `test_annotations_evaluable`**：沿 `XbdocPlugin.__mro__` 全链对每个方法做 `typing.get_type_hints` 强制求值 + 七个核心模块级求值（刻意排除框架基类——其 `Star.__init__` 的 TYPE_CHECKING 注解在 PEP 649 下同样不可求值，加载器从不内省它）；阴性对照验证护栏对未修复代码必红（vars(子类) 不含 Mixin 方法，必须走 MRO）。全仓 AST 级注解名解析扫描零残留。
+
 ## v1.2.37 (2026-10-30)
 
 - **架构终形（一接口一实现完成收口）**：
