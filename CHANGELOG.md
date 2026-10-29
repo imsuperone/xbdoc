@@ -1,5 +1,28 @@
 # 更新日志 (Changelog)
 
+## v1.2.36 (2026-10-29)
+
+- **修复 WebUI 平台选择崩溃**：设置页 `savePlatformSelection` 引用了未定义变量 `_customPlatforms`，勾选平台 / 添加自定义平台全部报错失效；现正确读写 `state.customPlatforms`。
+- **修复注入阻塞事件循环**：参考资料 / 强制遵守 / 工作区模式的文档读取与检索（冷缓存需解 PDF、全量分词，秒级）改走线程池，不再卡住 AstrBot 整个事件循环（与 `/xbdoc read`、WebUI 预览同口径）。
+- **修复网络层重复请求**：前缀探测成功后，请求失败不再对全部前缀重发同一请求（此前业务报错会被重放多遍并掩盖为「无法连接」）；真实错误原样透出。
+- **修复 `/xbdoc prompt_clear` 提示**：未设置提示词时如实回「未设置」，不再误报「已清空」。
+- **架构收敛（一接口一实现）**：
+  - 检索编排 `retrieve` / `build_inject_text` 从 `main.py` 移入 `core/store/search.py`，`main.py` 只剩入口 + LLM 钩子 + 指令分发；
+  - 平台别名只在 `_clean_platform` 一处，`is_platform_allowed` 改为预设串展开（`onebot` / `onebot_matrix` / `custom`），删除 30 行硬编码白名单；
+  - seen 记录群/私两份合并为 `_record_seen` 单实现；会话解析候选表合并为 `_candidate_keys`（`_session_keys` 删除）；
+  - 三个缓存桶的「LRU 上限 + 写后复验」抽成 `_cache_put`；
+  - WebUI 群合并视图 `_get_all_merged_groups` 由 115 行双份分支收紧为一份。
+- **冗余清理**：前端删除对服务端已规范化 key 的二次归一与合并循环（`strongerMode` / `_MODE_PRIORITY` / `normalizeSessionKeyClient` 随之移除）；`res.data?.` 双层兜底、`/bindings/save` 回包冗余字段、10 余个仅模块内使用的 `App.*` 导出、4 个死 CSS 类、函数内重复 import 一并删除；首屏绑定预取不再等 200ms 定时器。
+- **文档对齐**：README 删除不存在的「旧数据迁移」声明；接口总账重建于 `aidocs/ARCHITECTURE.md`（Web 13 条 / 聊天 15 组 / LLM 2 工具 + 1 注入，一接口一实现对照）。
+
+## v1.2.35 (2026-10-28)
+
+- **架构拆分（无行为变更）**：
+  - `core/store.py` 拆为 `core/store/` 包：`common` / `persistence` / `documents` / `sessions` / `config` 五个模块，`XbdocStoreMixin` 作为聚合出口保持外部导入不变；
+  - `pages/manager/app.js` 拆为 `pages/manager/js/` 下 10 个按序加载的经典脚本模块（`shared` / `toast` / `session` / `theme` / `docs` / `groups` / `bindings` / `reader` / `settings` / `version`），共享状态集中到 `App.state`；
+  - 插件热重载列表同步覆盖 `core.store` 子模块。
+- **修复沙箱主题失效**：AstrBot 插件页 iframe 无 `allow-same-origin`，`localStorage` 抛异常时 `initTheme` 会整体中断，导致深浅色切换按钮无响应；现仅将缓存读取包进 try，主题应用与事件绑定照常执行。
+
 ## v1.2.34 (2026-10-28)
 
 - **WebUI 页面元数据补全**：`metadata.yaml` 新增 `pages` 声明，控制台页面标题由默认的 `manager` 变为「文档记忆」。

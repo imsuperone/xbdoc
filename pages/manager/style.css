@@ -414,48 +414,6 @@ textarea.m3-textarea, textarea.m3-field {
   left: 3px;
 }
 
-/* M3 Segmented Control */
-.m3-segmented-control {
-  display: flex;
-  background: var(--m3-sys-color-surface-container);
-  border-radius: var(--m3-radius-pill);
-  padding: 4px;
-  gap: 4px;
-}
-
-.seg-item {
-  flex: 1;
-  padding: 9px 16px;
-  border: none;
-  background: transparent;
-  color: var(--m3-sys-color-on-surface);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: var(--m3-radius-pill);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.seg-item:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-
-[data-theme="dark"] .seg-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.seg-item.active {
-  background: var(--m3-sys-color-surface-container-high);
-  color: var(--m3-seg-ink, var(--m3-sys-color-primary));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
 /* Buttons */
 .m3-btn {
   display: inline-flex;
@@ -478,13 +436,13 @@ textarea.m3-textarea, textarea.m3-field {
   transform: scale(0.97);
 }
 
-.primary-btn, .m3-btn-filled {
+.primary-btn {
   background: var(--m3-sys-color-primary);
   color: var(--m3-sys-color-on-primary);
   box-shadow: var(--m3-shadow-card);
 }
 
-.primary-btn:hover, .m3-btn-filled:hover {
+.primary-btn:hover {
   transform: translateY(-1px);
   filter: brightness(0.96);
 }
@@ -712,27 +670,8 @@ button.m3-accent-picker:focus-visible {
   flex-wrap: wrap;
 }
 
-.m3-chip {
-  padding: 6px 14px;
-  border-radius: var(--m3-radius-pill);
-  border: 1px solid var(--m3-sys-color-divider);
-  background: var(--m3-sys-color-surface-container);
-  color: var(--m3-sys-color-on-surface);
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.m3-chip:hover {
-  background: var(--m3-sys-color-primary-container);
-  color: var(--m3-sys-color-on-primary-container);
-  border-color: var(--m3-sys-color-primary);
-}
-
 /* Buttons, Chips, Segments - clickability & stacking */
-button, .m3-btn, .m3-icon-btn, .seg-item, .m3-chip, .m3-switch,
+button, .m3-btn, .m3-icon-btn, .m3-switch,
 .segmented-choice-btn, .shield-filter-chip, .mode-btn-pill, .doc-select-chip {
   cursor: pointer !important;
   pointer-events: auto !important;
@@ -1810,22 +1749,13 @@ code.mono {
     width: 100%;
   }
 
-  .m3-input, .m3-textarea, .m3-field, .seg-item, .cat-tab {
+  .m3-input, .m3-textarea, .m3-field, .cat-tab {
     min-height: 44px;
   }
 
   .group-switch-toolbar .m3-input {
     min-height: 42px;
     height: 42px;
-  }
-
-  .m3-segmented-control {
-    flex-wrap: wrap;
-  }
-
-  .seg-item {
-    flex: 1 1 auto;
-    padding: 10px 14px;
   }
 
   .dropzone-container {

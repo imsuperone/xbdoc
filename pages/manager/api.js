@@ -58,22 +58,16 @@
     }
   }
 
-  // 带并发合并的前缀请求：已有探测结果直连；已有扫描在飞则等它结束复用结果；
-  // 都没有才自己扫一遍。首屏三个并发请求只产生一次扫描。
+  // 带并发合并的前缀请求：已探测出前缀直连（失败如实抛错，不重扫——重扫会把同一 POST
+  // 发多遍并把业务错误掩盖成“无法连接”）；无前缀时多个并发请求共享同一次探测扫描。
   async function _requestWithPrefixes(urlOf, options, timeoutMs = DEFAULT_TIMEOUT) {
     if (_detectedPrefix) {
-      try {
-        return await tryFetchJson(urlOf(_detectedPrefix), options, timeoutMs);
-      } catch (e) {}
+      return await tryFetchJson(urlOf(_detectedPrefix), options, timeoutMs);
     }
     if (_detectFlight) {
-      try {
-        await _detectFlight;
-      } catch (e) {}
+      await _detectFlight.catch(() => {});
       if (_detectedPrefix) {
-        try {
-          return await tryFetchJson(urlOf(_detectedPrefix), options, timeoutMs);
-        } catch (e) {}
+        return await tryFetchJson(urlOf(_detectedPrefix), options, timeoutMs);
       }
     }
     const flight = (async () => {
@@ -123,19 +117,20 @@
     },
 
     async get(endpoint, params = {}) {
-      const cleanParams = { ...params };
       const b = getBridge();
       if (b && typeof b.apiGet === "function") {
-        return await b.apiGet(endpoint, cleanParams);
+        return await b.apiGet(endpoint, params);
       }
 
-      const qs = new URLSearchParams(cleanParams).toString();
+      const qs = new URLSearchParams(params).toString();
       const queryStr = qs ? `?${qs}` : "";
 
       try {
         return await _requestWithPrefixes((p) => `${p}${endpoint}${queryStr}`, undefined);
       } catch (e) {
-        throw new Error(`无法连接至插件后端 API (${endpoint})`);
+        throw e.message === "__no_prefix__"
+          ? new Error(`无法连接至插件后端 API (${endpoint})`)
+          : e;
       }
     },
 
@@ -154,7 +149,9 @@
       try {
         return await _requestWithPrefixes((p) => `${p}${endpoint}`, options, timeoutMs);
       } catch (e) {
-        throw new Error(`请求后端失败 (${endpoint})`);
+        throw e.message === "__no_prefix__"
+          ? new Error(`请求后端失败 (${endpoint})`)
+          : e;
       }
     },
 

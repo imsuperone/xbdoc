@@ -1,10 +1,9 @@
 """文档记忆助手插件：零 Embedding 检索 + 按群会话绑定 + 群独立提示词 + 大模型自动引用"""
 
 import asyncio
-import math
+import copy
 import re
 import time
-from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,23 +18,34 @@ except Exception:
     _HAS_TEXT_PART = False
     TextPart = None  # type: ignore
 
-# 子模块导入：优先包内相对导入，失败时回退到文件目录直载（兼容各类加载器）
-# 热更新刷新：AstrBot 重载插件只 reload main.py，需主动按依赖序 reload 子模块以使更新立即生效
+# 子模块热重载：AstrBot 重载插件只 reload main.py，需主动按依赖序 reload 子模块以使更新立即生效
 import importlib as _importlib
 import sys as _sys
 
-for _sub in ("core.retrieval", "core.inject", "core.store", "core.commands", "core.webapi"):
+for _sub in (
+    "core.retrieval",
+    "core.inject",
+    "core.store.common",
+    "core.store.persistence",
+    "core.store.documents",
+    "core.store.search",
+    "core.store.sessions",
+    "core.store.config",
+    "core.store",
+    "core.commands",
+    "core.webapi",
+):
     for _prefix in (f"{__package__}." if __package__ else "", ""):
         _mod_name = f"{_prefix}{_sub}" if _prefix else _sub
-        if _mod_name in _sys.modules:
+        _mod = _sys.modules.get(_mod_name)
+        if _mod is not None:
             try:
-                _importlib.reload(_sys.modules[_mod_name])
+                _importlib.reload(_mod)
             except Exception:
                 pass
 
 try:
-    from .core.retrieval import score_chunk_bm25, tokenize
-    from .core.inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
+    from .core.inject import apply_system_prompt, build_system_text, build_workspace_text
     from .core.store import PLUGIN_NAME, XbdocStoreMixin
     from .core.commands import XbdocCommandsMixin
     from .core.webapi import XbdocWebAPIMixin
@@ -43,8 +53,7 @@ except ImportError:
     _plug_dir = str(Path(__file__).resolve().parent)
     if _plug_dir not in _sys.path:
         _sys.path.insert(0, _plug_dir)
-    from core.retrieval import score_chunk_bm25, tokenize
-    from core.inject import apply_system_prompt, build_system_text, build_workspace_text, fold_ws, truncate_text
+    from core.inject import apply_system_prompt, build_system_text, build_workspace_text
     from core.store import PLUGIN_NAME, XbdocStoreMixin
     from core.commands import XbdocCommandsMixin
     from core.webapi import XbdocWebAPIMixin
@@ -66,113 +75,6 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             self._register_web_apis()
         except Exception as e:
             logger.warning(f"[{PLUGIN_NAME}] 注册 Web API 异常: {e}")
-
-
-    # ---------- 检索与上下文注入 ----------
-    def retrieve(self, query: str, doc_ids: List[str], top_k: Optional[int] = None) -> List[Dict[str, Any]]:
-        top_k = top_k or self._cfg_int("top_k")
-        clean_q = re.sub(r"@\S+", "", query or "").strip()
-        qtokens = tokenize(clean_q)
-        if not doc_ids:
-            return []
-        scored: List[Dict[str, Any]] = []
-        q_lower = clean_q.lower()
-
-        # BM25 全局量：N/avg_len/idf 在绑定文档全量切片上一次算好，Counter 全走缓存；
-        # 按（绑定集合 + 各文档切片数）做多槽缓存，多会话交替提问不再反复重算
-        _key = tuple((d, int(self._index[d].get("chunks", 0))) for d in sorted(set(doc_ids)) if d in self._index)
-        _cache = getattr(self, "_bm25_cache", None)
-        if not isinstance(_cache, dict):
-            _cache = self._bm25_cache = {}
-        _hit = _cache.get(_key)
-        if _hit is not None:
-            # LRU：命中移到队尾，热点绑定组合不被挤掉
-            try:
-                _cache[_key] = _cache.pop(_key)
-                _hit = _cache[_key]
-            except Exception:
-                pass
-        if _hit is None:
-            _all_counters: List[Counter] = []
-            for d, _ in _key:
-                _all_counters.extend(self._get_chunk_counters(d))
-            _n = len(_all_counters)
-            _avg_len = sum(sum(_c.values()) for _c in _all_counters) / _n if _n else 0.0
-            _df: Counter = Counter()
-            for _c in _all_counters:
-                for _t in _c.keys():
-                    _df[_t] += 1
-            _hit = {
-                "n": _n, "avg": _avg_len,
-                "idf": {t: math.log((_n - f + 0.5) / (f + 0.5) + 1.0) for t, f in _df.items()},
-            }
-            if len(_cache) >= 8:
-                try:
-                    _cache.pop(next(iter(_cache)))
-                except Exception:
-                    pass
-            _cache[_key] = _hit
-        _n, _avg_len, _idf = _hit["n"], _hit["avg"], _hit["idf"]
-
-        for did in doc_ids:
-            meta = self._index.get(did)
-            if not meta:
-                continue
-            fname = str(meta.get("filename", "")).lower()
-            fstem = Path(fname).stem.lower()
-            # 短文件名（如单字/数字）用 in 判断必误伤全量切片，需设长度门限
-            fname_hit = bool(
-                (len(fstem) >= 2 and fstem and fstem in q_lower)
-                or (len(fname) >= 4 and fname and fname in q_lower)
-            )
-
-            chunks = self._load_chunks(did)
-            counters = self._get_chunk_counters(did)
-            lengths = [sum(c.values()) for c in counters]
-            for idx, ch in enumerate(chunks):
-                tf = counters[idx] if idx < len(counters) else Counter()
-                doc_len = lengths[idx] if idx < len(lengths) else 0
-                s = score_chunk_bm25(qtokens, tf, doc_len, _avg_len, _idf) if qtokens else 0.0
-                if fname_hit and (idx == 0 or s > 0):
-                    # 文件名命中对首片（文档概览/标题）或已有关键词命中的切片做加权，
-                    # 避免完全无关的切片被全量塞入导致挤占精准内容
-                    s += 3.0
-                if s > 0:
-                    scored.append({
-                        "doc_id": did, "filename": meta.get("filename", did),
-                        "chunk_idx": idx, "text": ch, "score": s,
-                    })
-
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        results = scored[:max(1, top_k)]
-
-        # 保底策略：若未命中具体切片关键词，但本群确有绑定文档，保底载入首切片，确保模型拥有文档认知
-        # （fallback_inject 可在 WebUI 关闭）
-        if not results and doc_ids and bool(self._cfg("fallback_inject")):
-            for did in doc_ids[:2]:
-                chunks = self._load_chunks(did)
-                if chunks:
-                    meta = self._index.get(did, {})
-                    results.append({
-                        "doc_id": did, "filename": meta.get("filename", did),
-                        "chunk_idx": 0, "text": chunks[0], "score": 0.5,
-                    })
-
-        return results
-
-
-    def build_inject_text(self, query: str, doc_ids: List[str]) -> str:
-        max_chars = self._cfg_no_limit("max_inject_chars")
-        hits = self.retrieve(query, doc_ids)
-        if not hits:
-            return ""
-        # 整体拼好再统一截断（与 system/workspace 同一截断语义），空白折叠省 token
-        body = fold_ws(
-            "\n\n".join(
-                f"{h['filename']} (片段{h['chunk_idx']+1}):\n{h['text']}" for h in hits
-            )
-        )
-        return truncate_text(body, max_chars)
 
 
     # ---------- LLM 钩子 ----------
@@ -216,7 +118,6 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
     def _strip_doc_tools_from_req(req) -> None:
         """当前会话无参考文档可查时，从本次请求的工具集中移除文档工具（浅拷贝隔离，不污染全局注册表）。"""
         try:
-            import copy as _copy
             ft = getattr(req, "func_tool", None)
             if ft is None:
                 return
@@ -232,7 +133,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 need_copy = True
             if not need_copy:
                 return
-            ft_copy = _copy.copy(ft)
+            ft_copy = copy.copy(ft)
             if isinstance(fl, list):
                 ft_copy.func_list = [f for f in fl if getattr(f, "name", "") not in names]
             if isinstance(tl, list):
@@ -310,7 +211,10 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             # 模式 1：⚡ 强制遵守文档 (文档直接作为系统提示词，专属提示词作为额外附加提示词)
             # -------------------------------------------------------------
             if mode == "system" and has_bound:
-                doc_texts = [self._get_full_text(did) for did in doc_ids]
+                # 全文读取/切片重建可能解 PDF（秒级慢活），放线程池避免阻塞事件循环
+                doc_texts = await asyncio.to_thread(
+                    lambda: [self._get_full_text(did) for did in doc_ids]
+                )
                 sys_text = build_system_text(doc_texts, custom_prompt, max_chars)
                 apply_system_prompt(req, sys_text, replace=replace_all)
 
@@ -323,10 +227,10 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
             # 模式 3：💻 模拟工作区模式 (需有绑定文档，否则回落到参考资料逻辑)
             # -------------------------------------------------------------
             if mode == "workspace" and has_bound:
-                files = []
-                for did in doc_ids:
-                    meta = self._index.get(did, {})
-                    files.append((meta.get("filename", did), self._get_full_text(did)))
+                files = await asyncio.to_thread(lambda: [
+                    (self._index.get(did, {}).get("filename", did), self._get_full_text(did))
+                    for did in doc_ids
+                ])
                 ws_text = build_workspace_text(files, custom_prompt, max_chars)
                 apply_system_prompt(req, ws_text, replace=replace_all)
 
@@ -354,7 +258,8 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 return
 
             query = str(getattr(req, "prompt", "") or event.message_str or "").strip()
-            inject = self.build_inject_text(query, doc_ids)
+            # 检索含切片加载与分词（冷缓存时秒级），放线程池避免阻塞事件循环
+            inject = await asyncio.to_thread(self.build_inject_text, query, doc_ids)
             if not inject:
                 return
 
@@ -403,7 +308,7 @@ class XbdocPlugin(XbdocStoreMixin, XbdocCommandsMixin, XbdocWebAPIMixin, Star):
                 self._latest_bot = bot
         except Exception:
             pass
-        self._record_seen_group(event)
+        self._record_seen(event)
 
 
     # ---------- LLM Tool ----------

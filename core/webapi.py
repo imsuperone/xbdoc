@@ -4,6 +4,9 @@
 """
 
 import asyncio
+import base64
+import functools
+import inspect
 import time
 from typing import Any, Dict, List
 
@@ -58,12 +61,7 @@ class XbdocWebAPIMixin:
             ver = get_version()
         except Exception:
             ver = "unknown"
-        return json_response({
-            "ok": True,
-            "status": "ok",
-            "version": ver,
-            "plugin": PLUGIN_NAME,
-        })
+        return json_response({"ok": True, "version": ver, "plugin": PLUGIN_NAME})
 
     async def _api_get_settings(self):
         return json_response({
@@ -89,9 +87,6 @@ class XbdocWebAPIMixin:
 
 
     async def _api_upload_doc(self):
-        import asyncio
-        import base64
-
         # 上传唯一链路：base64 JSON 直传（与 api.js 的 api.upload 一一对应，
         # iframe 桥接 apiPost / 直连 fetch 共用同一条 post 通道，不再保留 multipart/form 第二套）
         try:
@@ -249,17 +244,14 @@ class XbdocWebAPIMixin:
             fields["ignore_history"] = bool(payload.get("ignore_history"))
 
         # 写口在 store（锁内改内存 + 落盘一体）；回包在锁外拼
-        key, ent, valid = self.save_binding_payload(raw_key, ids, fields)
-        # save 响应即渲染（审计 #2）：回包带与 GET /bindings 同源的 entry 视图，
+        key, ent, _valid = self.save_binding_payload(raw_key, ids, fields)
+        # save 响应即渲染：回包带与 GET /bindings 同源的 entry 视图，
         # 前端直接更新本地映射，不再保存后整表重拉；空壳被 prune 时 entry 为 null（前端据此删键）
-        resp = {
+        return json_response({
             "ok": True,
             "session_key": key,
-            "doc_ids": valid,
-            "ignore_history": bool(ent.get("ignore_history", False)),
             "entry": self._binding_entry_view(key, ent) if ent else None,
-        }
-        return json_response(resp)
+        })
 
 
     async def _api_export_bindings(self):
@@ -285,7 +277,6 @@ class XbdocWebAPIMixin:
 
     def _find_all_bots(self) -> List[Any]:
         """定位平台适配器：优先走官方 platform_manager.platform_insts，其次事件缓存，最后有界泛遍历。"""
-        import functools
         try:  # 定位结果缓存 60 秒
             _cached = getattr(self, "_bots_cache", None) or {}
             if _cached.get("targets") and (time.time() - float(_cached.get("ts", 0))) < 60:
@@ -355,7 +346,6 @@ class XbdocWebAPIMixin:
             return targets
 
         # 3. 兜底：有界泛遍历
-        import inspect
         visited: set = set()
         budget = [800]
 
@@ -400,8 +390,6 @@ class XbdocWebAPIMixin:
 
     async def _fetch_platform_groups(self):
         """主动向平台适配器拉取群组（顺序尝试标准动作，避免向 CQHttp 并发轰炸不存在的 action 导致超时）。"""
-        import asyncio
-        import functools
         found_groups: Dict[str, Dict[str, Any]] = {}
         bots = self._find_all_bots()
         diag: List[str] = [f"adapters={len(bots)}"] + [
@@ -537,120 +525,82 @@ class XbdocWebAPIMixin:
 
 
     def _get_all_merged_groups(self, q: str = "", limit: int = 60) -> List[Dict[str, Any]]:
-        """seen + bindings 合并列表：统一平台为 onebot、剔除 webchat/probe 脏会话，并按 (kind, gid) 严格去重。"""
-        merged: Dict[str, Dict[str, Any]] = {}
-        norm_bindings = dict(self._bindings or {})
-        bound_keys = {k for k in norm_bindings.keys() if self._is_sane_key(k)}
+        """seen + bindings 合并列表：统一平台、剔除脏会话、按 (kind, gid) 去重、绑定优先排序。"""
+        bound = {k for k in self._bindings if self._is_sane_key(k)}
+        items: Dict[str, Dict[str, Any]] = {}
 
-        for raw_key, meta in list((self._seen_groups or {}).items()):
-            raw_key = str(raw_key).strip()
-            if not raw_key or not isinstance(meta, dict):
-                continue
-            ck = self._canonical_key_str(raw_key)
-            if not ck or not self._is_sane_key(ck):
+        def _put(kind: str, ident: str, key: str, name: str,
+                 plat: str, msg_count: int, last_seen: int) -> None:
+            dedup = f"{kind}:{ident}"
+            prev = items.get(dedup)
+            # 命中真实绑定键优先（含老格式 kind:ident），否则沿用已绑定会话的键
+            if key in bound:
+                sk = key
+            elif prev and prev["bound"]:
+                sk = prev["session_key"]
+            elif f"{kind}:{ident}" in bound:
+                sk = f"{kind}:{ident}"
+            else:
+                sk = key
+            items[dedup] = {
+                "gid": ident,
+                "group_name": name or (prev["group_name"] if prev else ""),
+                "platform": plat or (prev["platform"] if prev else ""),
+                "msg_count": max(msg_count, prev["msg_count"] if prev else 0),
+                "last_seen": max(last_seen, prev["last_seen"] if prev else 0),
+                "bound": (key in bound) or (prev["bound"] if prev else False) or (f"{kind}:{ident}" in bound),
+                "kind": kind,
+                "session_key": sk,
+                "display": name or (prev["display"] if prev else ""),
+            }
+
+        for raw_key, meta in list(self._seen_groups.items()):
+            ck = self._canonical_key_str(str(raw_key).strip())
+            if not ck or not self._is_sane_key(ck) or not isinstance(meta, dict):
                 continue
             kind, plat, ident = self._split_session_key(ck)
             plat = self._clean_platform(plat or meta.get("platform") or "")
-            if kind == "private" or raw_key.startswith("private:") or str(meta.get("kind") or "") == "private":
-                uid = ident or (raw_key.split(":")[-1] if ":" in raw_key else raw_key)
-                if not uid or not uid.isdigit():
+            if kind == "private" or str(meta.get("kind") or "") == "private":
+                kind = "private"
+                if not ident or not ident.isdigit():
                     continue
-                sk = f"private:{plat}:{uid}" if plat else f"private:{uid}"
-                if not self._is_sane_key(sk):
-                    continue
-                dedup_id = f"private:{uid}"
                 name = str(meta.get("group_name") or "").strip()
-                prev = merged.get(dedup_id)
-                merged[dedup_id] = {
-                    "gid": uid,
-                    "group_name": name or (prev.get("group_name", "") if prev else ""),
-                    "platform": plat or (prev.get("platform", "") if prev else ""),
-                    "msg_count": max(int(meta.get("msg_count") or 0), prev.get("msg_count", 0) if prev else 0),
-                    "last_seen": max(int(meta.get("last_seen") or 0), prev.get("last_seen", 0) if prev else 0),
-                    "bound": sk in bound_keys or (f"private:{uid}" in bound_keys) or (prev.get("bound", False) if prev else False),
-                    "kind": "private",
-                    "session_key": sk if sk in bound_keys else (prev["session_key"] if prev and prev.get("bound") else sk),
-                    "display": name or (prev.get("display", "") if prev else "") or f"私聊 {uid}",
-                }
-                continue
-
-            gid = ident or raw_key.split(":")[-1]
-            if not gid or "probe" in gid.lower():
-                continue
-            plat_eff = plat or "onebot"
-            sk = f"group:{plat_eff}:{gid}"
-            if not self._is_sane_key(sk):
-                continue
-            dedup_id = f"group:{gid}"
-            name = str(meta.get("group_name") or "").strip()
-            prev = merged.get(dedup_id)
-            is_bound = (sk in bound_keys) or (f"group:{gid}" in bound_keys) or (prev.get("bound", False) if prev else False)
-            eff_sk = sk
-            if f"group:{gid}" in bound_keys and sk not in bound_keys:
-                eff_sk = f"group:{gid}"
-            elif prev and prev.get("bound"):
-                eff_sk = prev["session_key"]
-            merged[dedup_id] = {
-                "gid": gid,
-                "group_name": name or (prev.get("group_name", "") if prev else ""),
-                "platform": plat_eff,
-                "msg_count": max(int(meta.get("msg_count") or 0), prev.get("msg_count", 0) if prev else 0),
-                "last_seen": max(int(meta.get("last_seen") or 0), prev.get("last_seen", 0) if prev else 0),
-                "bound": is_bound,
-                "kind": "group",
-                "session_key": eff_sk,
-                "display": name or (prev.get("display", "") if prev else ""),
-            }
-
-        for k in list(bound_keys):
-            if not k or not self._is_sane_key(k):
-                continue
-            kind, _p, ident = self._split_session_key(k)
-            plat = self._clean_platform(_p or "")
-            if kind == "private":
-                uid = ident
-                if not uid or not uid.isdigit():
-                    continue
-                dedup_id = f"private:{uid}"
-                if dedup_id in merged:
-                    merged[dedup_id]["bound"] = True
-                    merged[dedup_id]["session_key"] = k
-                    continue
-                merged[dedup_id] = {
-                    "gid": uid, "group_name": "", "platform": plat,
-                    "msg_count": 0, "last_seen": 0, "bound": True,
-                    "kind": "private", "session_key": k,
-                    "display": f"私聊 {uid}",
-                }
+                _put(kind, ident, f"private:{plat}:{ident}" if plat else f"private:{ident}",
+                     name, plat, int(meta.get("msg_count") or 0), int(meta.get("last_seen") or 0))
             else:
-                gid = ident.split(":")[-1] if ident else k
+                gid = ident or ck
                 if not gid or "probe" in gid.lower():
                     continue
-                dedup_id = f"group:{gid}"
-                if dedup_id in merged:
-                    merged[dedup_id]["bound"] = True
-                    merged[dedup_id]["session_key"] = k
+                _put("group", gid, f"group:{plat or 'onebot'}:{gid}",
+                     str(meta.get("group_name") or "").strip(), plat or "onebot",
+                     int(meta.get("msg_count") or 0), int(meta.get("last_seen") or 0))
+
+        # 只有绑定、无 seen 记录的会话（空壳）同样列出
+        for k in bound:
+            kind, _p, ident = self._split_session_key(k)
+            if not ident:
+                continue
+            if kind == "private":
+                if not ident.isdigit():
                     continue
-                merged[dedup_id] = {
-                    "gid": gid, "group_name": "", "platform": plat or "onebot",
-                    "msg_count": 0, "last_seen": 0, "bound": True,
-                    "kind": "group", "session_key": k,
-                    "display": "",
-                }
+                _put("private", ident, k, "", self._clean_platform(_p or ""), 0, 0)
+            else:
+                gid = ident.split(":")[-1]
+                if not gid or "probe" in gid.lower():
+                    continue
+                _put("group", gid, k, "", self._clean_platform(_p or "") or "onebot", 0, 0)
 
-        for g in merged.values():
-            if not g.get("session_key"):
-                g["session_key"] = f"group:onebot:{g['gid']}"
-            if not g.get("display"):
-                g["display"] = (g["group_name"] or "").strip()
+        for g in items.values():
+            if not g["display"]:
+                g["display"] = (g["group_name"] or "").strip() or (f"私聊 {g['gid']}" if g["kind"] == "private" else "")
 
-        items = list(merged.values())
+        out = list(items.values())
         if q:
             q_low = q.lower()
-            items = [g for g in items if q_low in g["gid"].lower() or q_low in g["group_name"].lower()
-                     or q_low in g["platform"].lower() or q_low in str(g.get("display") or "").lower()]
-        items.sort(key=lambda g: (not g["bound"], -g["last_seen"], -g["msg_count"], g["gid"]))
-        return items[:limit]
+            out = [g for g in out if q_low in g["gid"].lower() or q_low in g["group_name"].lower()
+                   or q_low in g["platform"].lower() or q_low in g["display"].lower()]
+        out.sort(key=lambda g: (not g["bound"], -g["last_seen"], -g["msg_count"], g["gid"]))
+        return out[:limit]
 
 
     async def _api_fetch_groups(self):

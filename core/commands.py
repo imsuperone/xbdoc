@@ -95,11 +95,7 @@ class XbdocCommandsMixin:
 
 
     def _state_of(self, event: AstrMessageEvent) -> Dict[str, Any]:
-        """status / prompt / workspace 共用的状态收集：一次会话解析取全部展示字段。
-
-        旧逻辑各命令先 get_bound_doc_ids 再 _session_keys 再 _effective_session，
-        一条查询白做 2-3 次完整解析；现在统一只解析一次。
-        """
+        """status / prompt / workspace 共用的状态收集：一次会话解析取全部展示字段。"""
         sess = self._effective_session(event)
         ids = sess.get("doc_ids", [])
         prompt = str(sess.get("prompt") or "").strip()
@@ -390,12 +386,10 @@ class XbdocCommandsMixin:
 
     async def doc_prompt_clear(self, event: AstrMessageEvent):
         """清空本群提示词 /xbdoc prompt_clear（管理员）"""
-        # 读判在锁外（展示性预读），清空走写口 set_session_prompt("", 自带 prune+落盘)，消息出锁（审计 #8）
+        # 读判在锁外（展示性预读），清空走写口 set_session_prompt("", 自带 prune+落盘)，消息出锁
         key, ent = self._resolve_session(event, create=False)
-        if not ent:
+        if not ent or not ent.get("prompt"):
             msg = f"⚠️ 本群（{key}）当前未设置专属提示词。"
-        elif not ent.get("prompt"):
-            msg = f"✅ 已清空本群（{key}）专属提示词。"
         else:
             self.set_session_prompt(key, "")
             msg = f"✅ 已清空本群（{key}）专属提示词。"

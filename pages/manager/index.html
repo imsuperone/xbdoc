@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>文档记忆助手</title>
-  <link rel="stylesheet" href="./style.css?v=1.2.34" />
+  <link rel="stylesheet" href="./style.css?v=1.2.36" />
   <style>
     html[data-boot] { visibility: hidden; background: #f4f6f8; }
     @media (prefers-color-scheme: dark) { html[data-boot] { background: #0f1115; } }
@@ -30,7 +30,7 @@
     <header class="top-bar">
       <div class="top-bar-brand">
         <div class="brand-text">
-          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.34">1.2.34</span></h1>
+          <h1>文档记忆助手 <span class="version-tag" data-ver="1.2.36">1.2.36</span></h1>
         </div>
       </div>
       <div class="top-bar-actions">
@@ -450,7 +450,18 @@
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="./api.js?v=1.2.34" defer></script>
-  <script src="./app.js?v=1.2.34" defer></script>
+  <script src="./api.js?v=1.2.36" defer></script>
+  <!-- 经典脚本按序加载（沙箱 iframe 下 ES module 会被 CORS 拦截） -->
+  <script src="./js/shared.js?v=1.2.36" defer></script>
+  <script src="./js/toast.js?v=1.2.36" defer></script>
+  <script src="./js/session.js?v=1.2.36" defer></script>
+  <script src="./js/theme.js?v=1.2.36" defer></script>
+  <script src="./js/docs.js?v=1.2.36" defer></script>
+  <script src="./js/groups.js?v=1.2.36" defer></script>
+  <script src="./js/bindings.js?v=1.2.36" defer></script>
+  <script src="./js/reader.js?v=1.2.36" defer></script>
+  <script src="./js/settings.js?v=1.2.36" defer></script>
+  <script src="./js/version.js?v=1.2.36" defer></script>
+  <script src="./js/app.js?v=1.2.36" defer></script>
 </body>
 </html>
