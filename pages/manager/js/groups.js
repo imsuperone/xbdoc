@@ -110,7 +110,7 @@ function renderGroupSwitchTable() {
     const boundDot = g.bound ? `<span class="group-bound-dot" title="已配置绑定"></span>` : "";
 
     return `
-      <tr class="${isSelected ? "is-selected" : (isBound ? "is-enabled" : "")}" data-select-key="${esc(g.session_key)}">
+      <tr class="${isSelected ? "is-selected" : (g.bound ? "is-enabled" : "")}" data-select-key="${esc(g.session_key)}">
         <td class="group-cell-name" title="${esc(nameText)}">${boundDot}${esc(nameText)}</td>
         <td class="group-cell-id" title="${esc(g.session_key)}">${esc(g.gid || g.session_key)}</td>
         <td class="group-cell-action">

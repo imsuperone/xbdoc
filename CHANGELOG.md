@@ -2,7 +2,9 @@
 
 ## v1.2.36 (2026-10-29)
 
-- **修复 WebUI 平台选择崩溃**：设置页 `savePlatformSelection` 引用了未定义变量 `_customPlatforms`，勾选平台 / 添加自定义平台全部报错失效；现正确读写 `state.customPlatforms`。
+- **浏览器端到端验证（真实前端 × 真实后端逻辑）**：搭建本地冒烟服务（`tests/webui_smoke.py`，本地件），用 Chrome 无头浏览器实测全部页面链路——首屏渲染、文档预览翻页、绑定载入与模式切换保存、平台勾选/自定义平台同步、设置落盘、base64 上传入库与删除，零 pageerror、零业务 4xx/5xx；过程中抓出并修复 `groups.js` 行模板残留的 `isBound` 悬空引用（该缺陷会导致群表与绑定列表整体渲染失败，语法检查无法发现）。
+- **兼容层对照 AstrBot v4.29.3 本体逐一核实**：`register_web_api`/`json_response`/`error_response`/`file_response`/`PluginRequest.json(default)`/`query.get(k,d,type=)` 签名全部吻合；桥接 `AstrBotPluginPage.apiGet` 直传响应体（父端 `a.data?.data ?? a.data`），删除 `res.data?.` 兜底正确；插件页 iframe 沙箱确无 `allow-same-origin`，localStorage 必然抛错，主题偏好落服务端为必要设计；真实框架 Python 下插件导入成功，两个 LLM 工具被真实装饰器注册。
+- **修复 WebUI 平台选择崩溃**：设置页 `savePlatformSelection` 引用了未定义变量 `_customPlatforms`，勾选平台/添加自定义平台全部报错失效；现正确读写 `state.customPlatforms`（浏览器端到端实测通过）。
 - **修复注入阻塞事件循环**：参考资料 / 强制遵守 / 工作区模式的文档读取与检索（冷缓存需解 PDF、全量分词，秒级）改走线程池，不再卡住 AstrBot 整个事件循环（与 `/xbdoc read`、WebUI 预览同口径）。
 - **修复网络层重复请求**：前缀探测成功后，请求失败不再对全部前缀重发同一请求（此前业务报错会被重放多遍并掩盖为「无法连接」）；真实错误原样透出。
 - **修复 `/xbdoc prompt_clear` 提示**：未设置提示词时如实回「未设置」，不再误报「已清空」。
